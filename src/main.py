@@ -104,20 +104,24 @@ def check_outcomes():
 
 async def main():
     print("[boot] trading-signal-bot starting")
-    telegram.send("🤖 Signal bot ishga tushdi. Skanerlash boshlandi (1h/4h, spot).")
     last_scan = last_outcome = 0.0
     last_weekly = time.time()
     while True:
-        now = time.time()
-        if now - last_scan >= config.SCAN_INTERVAL_SEC:
-            last_scan = now
-            await scan_once()
-        if now - last_outcome >= config.OUTCOME_CHECK_SEC:
-            last_outcome = now
-            check_outcomes()
-        if now - last_weekly >= 7 * 86400:
-            last_weekly = now
-            telegram.send(telegram.format_weekly(journal.weekly_stats()))
+        # the loop must survive any error (exchange outage, network, etc.) —
+        # a crash here causes a container restart storm
+        try:
+            now = time.time()
+            if now - last_scan >= config.SCAN_INTERVAL_SEC:
+                last_scan = now
+                await scan_once()
+            if now - last_outcome >= config.OUTCOME_CHECK_SEC:
+                last_outcome = now
+                check_outcomes()
+            if now - last_weekly >= 7 * 86400:
+                last_weekly = now
+                telegram.send(telegram.format_weekly(journal.weekly_stats()))
+        except Exception:
+            print(f"[loop] error:\n{traceback.format_exc()}")
         await asyncio.sleep(30)
 
 
