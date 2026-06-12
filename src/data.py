@@ -6,6 +6,9 @@ import pandas as pd
 
 # Binance blocks US IPs (HTTP 451) — set EXCHANGE=okx/bybit/kraken if the host region is restricted
 _exchange = getattr(ccxt, os.getenv("EXCHANGE", "binance"))({"enableRateLimit": True})
+if _exchange.id == "binance":
+    # data-api.binance.vision serves public market data without geo-restrictions
+    _exchange.urls["api"]["public"] = "https://data-api.binance.vision/api/v3"
 
 
 def fetch_ohlcv(symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
