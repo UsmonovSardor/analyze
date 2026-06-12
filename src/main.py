@@ -4,13 +4,10 @@ import asyncio
 import time
 import traceback
 
-import ccxt
-
 from . import config, journal, risk, screener, telegram
 from .analyzer import analyze
+from .data import _exchange as _px
 from .data import snapshot
-
-_px = ccxt.binance({"enableRateLimit": True})
 
 
 def last_price(symbol: str) -> float:

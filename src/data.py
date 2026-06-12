@@ -1,8 +1,11 @@
 """Market data + indicators from Binance public endpoints (no API key needed)."""
+import os
+
 import ccxt
 import pandas as pd
 
-_exchange = ccxt.binance({"enableRateLimit": True})
+# Binance blocks US IPs (HTTP 451) — set EXCHANGE=okx/bybit/kraken if the host region is restricted
+_exchange = getattr(ccxt, os.getenv("EXCHANGE", "binance"))({"enableRateLimit": True})
 
 
 def fetch_ohlcv(symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
