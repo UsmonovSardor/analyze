@@ -9,14 +9,14 @@ from .strategy_meta import render_scorecard, strategy
 API = "https://api.telegram.org/bot{token}/{method}"
 
 
-def _call(method: str, payload: dict):
+def _call(method: str, payload: dict, timeout: int = 15):
     if not config.TELEGRAM_BOT_TOKEN:
         print(f"[telegram] not configured ({method}):\n" + payload.get("text", ""))
         return None
     try:
         r = requests.post(
             API.format(token=config.TELEGRAM_BOT_TOKEN, method=method),
-            json=payload, timeout=15,
+            json=payload, timeout=timeout,
         )
         if not r.ok:
             print(f"[telegram] {method} failed: {r.status_code} {r.text[:200]}")
@@ -65,9 +65,11 @@ def answer_callback(callback_id: str, text: str = ""):
     _call("answerCallbackQuery", {"callback_query_id": callback_id, "text": text})
 
 
-def get_updates(offset: int, timeout: int = 0) -> list[dict]:
+def get_updates(offset: int, timeout: int = 20) -> list[dict]:
+    # HTTP read timeout must exceed the server-side long-poll timeout
     res = _call("getUpdates", {"offset": offset, "timeout": timeout,
-                               "allowed_updates": ["callback_query", "message"]})
+                               "allowed_updates": ["callback_query", "message"]},
+                timeout=timeout + 10)
     return res["result"] if res and res.get("ok") else []
 
 
