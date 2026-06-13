@@ -138,8 +138,65 @@ def check_outcomes():
             print(f"[outcome] error on #{row['id']}:\n{traceback.format_exc()}")
 
 
+def _norm_symbol(raw: str) -> str:
+    s = raw.strip().upper().replace("-", "/")
+    if "/" not in s:
+        s = s.removesuffix("USDT") + "/USDT" if s.endswith("USDT") else f"{s}/USDT"
+    return s
+
+
+async def analyze_on_demand(symbol: str) -> str:
+    """Run a full Claude analysis on any pair, on request, and format the report."""
+    if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
+        return "⏳ Bugungi Claude tahlil limiti tugadi, ertaga urinib ko'ring."
+    try:
+        btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+        snap = btc_snap if symbol == "BTC/USDT" else snapshot(
+            symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+    except Exception as exc:
+        return f"❌ <b>{symbol}</b> ma'lumotini olishda xato: {str(exc)[:120]}"
+
+    hint = screener.find_candidate(snap) or "A"  # force analysis even without a screener trigger
+    journal.bump_claude_calls()
+    sig = await analyze(snap, hint, btc_snap, journal.setup_performance(30))
+    ctx_str = market_context(btc_snap)
+
+    if sig.get("signal") == "long":
+        ok, why = risk.validate(sig, last_price(symbol))
+        if ok:
+            sig_id = journal.add_signal(sig)
+            kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
+            telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)
+            return ""  # already sent as a full signal
+        return (f"📊 <b>{symbol}</b> — tahlil qilindi, lekin signal BERILMADI\n"
+                f"Sabab: risk filtri ({why})\n🌐 {ctx_str}")
+    return (f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n"
+            f"💡 {sig.get('reason', 'kriteriylarga mos kelmadi')}\n"
+            f"Ishonch: {sig.get('score', 0)}/10\n🌐 {ctx_str}")
+
+
+async def handle_command(text: str):
+    parts = text.strip().split()
+    cmd = parts[0].lower().lstrip("/").split("@")[0]
+    if cmd in ("analyze", "analiz", "a"):
+        if len(parts) < 2:
+            telegram.send("Foydalanish: <code>/analyze BTC</code>")
+            return
+        symbol = _norm_symbol(parts[1])
+        telegram.send(f"🔍 <b>{symbol}</b> tahlil qilinmoqda...")
+        msg = await analyze_on_demand(symbol)
+        if msg:
+            telegram.send(msg)
+    elif cmd in ("stats", "stat"):
+        telegram.send(telegram.format_weekly(journal.weekly_stats()))
+    elif cmd in ("open", "ochiq"):
+        telegram.send(telegram.format_open(journal.open_signals()))
+    elif cmd in ("help", "start", "yordam"):
+        telegram.send(telegram.format_help())
+
+
 async def telegram_poller():
-    """Long-poll for inline-button presses (Execute / Skip) in semi-auto mode."""
+    """Long-poll for button presses and text commands."""
     offset = 0
     while True:
         try:
@@ -147,16 +204,18 @@ async def telegram_poller():
             for u in updates:
                 offset = u["update_id"] + 1
                 cb = u.get("callback_query")
-                if not cb:
+                if cb:
+                    action, _, sid = cb.get("data", "").partition(":")
+                    telegram.answer_callback(cb["id"])
+                    if action == "exec" and config.trading_enabled():
+                        print(f"[exec] #{sid}: {await asyncio.to_thread(_try_execute, int(sid))}")
+                    elif action == "skip":
+                        telegram.send(f"❌ Signal #{sid} o'tkazib yuborildi.")
                     continue
-                data = cb.get("data", "")
-                action, _, sid = data.partition(":")
-                telegram.answer_callback(cb["id"])
-                if action == "exec" and config.trading_enabled():
-                    result = await asyncio.to_thread(_try_execute, int(sid))
-                    print(f"[exec] #{sid}: {result}")
-                elif action == "skip":
-                    telegram.send(f"❌ Signal #{sid} o'tkazib yuborildi.")
+                msg = u.get("message", {})
+                text = msg.get("text", "")
+                if text.startswith("/"):
+                    await handle_command(text)
         except Exception:
             print(f"[poller] error:\n{traceback.format_exc()}")
             await asyncio.sleep(5)
@@ -186,8 +245,8 @@ async def main():
     mode = config.TRADING_MODE if config.trading_enabled() else "off (signals only)"
     print(f"[boot] trading-signal-bot starting · trading={mode}")
     tasks = [scan_loop()]
-    if config.trading_enabled() and config.TRADING_MODE == "semi":
-        tasks.append(telegram_poller())  # only needed to receive Execute buttons
+    if config.TELEGRAM_BOT_TOKEN:
+        tasks.append(telegram_poller())  # commands (/analyze, /stats) + execute buttons
     await asyncio.gather(*tasks)
 
 

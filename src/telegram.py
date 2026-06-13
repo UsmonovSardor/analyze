@@ -48,7 +48,7 @@ def answer_callback(callback_id: str, text: str = ""):
 
 def get_updates(offset: int, timeout: int = 0) -> list[dict]:
     res = _call("getUpdates", {"offset": offset, "timeout": timeout,
-                               "allowed_updates": ["callback_query"]})
+                               "allowed_updates": ["callback_query", "message"]})
     return res["result"] if res and res.get("ok") else []
 
 
@@ -140,6 +140,29 @@ def format_weekly(stats: dict) -> str:
             meta = strategy(setup)
             lines.append(f"{meta['emoji']} {meta['name']}: {s['wins']}/{s['closed']} "
                          f"({s['win_rate']}%) · {s['total_r']:+.2f}R")
+    return "\n".join(lines)
+
+
+def format_help() -> str:
+    return (
+        "🤖 <b>Trading Analyst — buyruqlar</b>\n\n"
+        "<code>/analyze BTC</code> — juftlikni hoziroq Claude bilan to'liq tahlil qilish\n"
+        "<code>/stats</code> — haftalik statistika (strategiya bo'yicha)\n"
+        "<code>/open</code> — ochiq signallar ro'yxati\n"
+        "<code>/help</code> — shu yordam\n\n"
+        "Bot 24/7 o'zi ham skanerlaydi va kuchli setup topsa signal yuboradi.\n"
+        "⚠️ <i>Bu moliyaviy maslahat emas</i>"
+    )
+
+
+def format_open(rows: list) -> str:
+    if not rows:
+        return "📭 Hozir ochiq signal yo'q."
+    lines = ["📂 <b>Ochiq signallar:</b>", ""]
+    for r in rows:
+        meta = strategy(r.get("setup", ""))
+        lines.append(f"#{r['id']} {meta['emoji']} <b>{r['symbol']}</b> · {meta['name']} · "
+                     f"holat: {r['status']} · entry {fmt_price(r['entry'])}")
     return "\n".join(lines)
 
 
