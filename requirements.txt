@@ -2,3 +2,4 @@ ccxt>=4.3
 pandas>=2.2
 requests>=2.31
 claude-agent-sdk>=0.1.0
+matplotlib>=3.8

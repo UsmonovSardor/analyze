@@ -35,6 +35,25 @@ def send(text: str, reply_markup: dict | None = None) -> int | None:
     return res["result"]["message_id"] if res and res.get("ok") else None
 
 
+def send_photo(png: bytes, caption: str = "", reply_markup: dict | None = None) -> int | None:
+    if not config.TELEGRAM_BOT_TOKEN:
+        print(f"[telegram] not configured (photo):\n{caption[:200]}")
+        return None
+    data = {"chat_id": config.TELEGRAM_CHAT_ID, "caption": caption[:1024], "parse_mode": "HTML"}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
+    try:
+        r = requests.post(API.format(token=config.TELEGRAM_BOT_TOKEN, method="sendPhoto"),
+                          data=data, files={"photo": ("chart.png", png, "image/png")}, timeout=30)
+        if not r.ok:
+            print(f"[telegram] sendPhoto failed: {r.status_code} {r.text[:200]}")
+            return None
+        return r.json()["result"]["message_id"]
+    except requests.RequestException as exc:
+        print(f"[telegram] sendPhoto network error: {exc}")
+        return None
+
+
 def edit(message_id: int, text: str, reply_markup: dict | None = None):
     payload = {"chat_id": config.TELEGRAM_CHAT_ID, "message_id": message_id,
                "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}

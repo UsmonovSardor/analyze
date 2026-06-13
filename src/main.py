@@ -4,10 +4,20 @@ import asyncio
 import time
 import traceback
 
-from . import config, journal, risk, screener, telegram
+from . import chart, config, journal, risk, screener, telegram
 from .analyzer import analyze
 from .data import _exchange as _px
 from .data import snapshot
+
+
+def send_chart(symbol: str, snap: dict, sig: dict | None = None):
+    """Render and post an annotated chart; never let a chart error block a signal."""
+    try:
+        png = chart.render(symbol, snap, sig)
+        telegram.send_photo(png, caption=f"📈 <b>{symbol}</b> · 1h grafik"
+                            + (" · kirish nuqtasi belgilandi" if sig and sig.get("signal") == "long" else ""))
+    except Exception:
+        print(f"[chart] error for {symbol}:\n{traceback.format_exc()}")
 
 
 def last_price(symbol: str) -> float:
@@ -69,6 +79,7 @@ async def scan_once():
             sig_id = journal.add_signal(sig)
             kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
             telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)
+            send_chart(symbol, snap, sig)
             if config.trading_enabled() and config.TRADING_MODE == "auto":
                 _try_execute(sig_id)
             print(f"[signal] #{sig_id} {symbol} posted")
@@ -167,9 +178,12 @@ async def analyze_on_demand(symbol: str) -> str:
             sig_id = journal.add_signal(sig)
             kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
             telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)
-            return ""  # already sent as a full signal
+            send_chart(symbol, snap, sig)
+            return ""  # already sent as a full signal + chart
+        send_chart(symbol, snap, None)
         return (f"📊 <b>{symbol}</b> — tahlil qilindi, lekin signal BERILMADI\n"
                 f"Sabab: risk filtri ({why})\n🌐 {ctx_str}")
+    send_chart(symbol, snap, None)
     return (f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n"
             f"💡 {sig.get('reason', 'kriteriylarga mos kelmadi')}\n"
             f"Ishonch: {sig.get('score', 0)}/10\n🌐 {ctx_str}")
