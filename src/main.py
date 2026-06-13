@@ -218,6 +218,13 @@ async def handle_command(text: str):
         msg = await analyze_on_demand(symbol)
         if msg:
             telegram.send(msg)
+    elif cmd in ("balance", "balans", "portfel"):
+        if not (config.BINANCE_API_KEY and config.BINANCE_API_SECRET):
+            telegram.send("⚠️ Binance ulanmagan. Balans uchun API key qo'shing.")
+            return
+        from . import exchange_trade
+        data = await asyncio.to_thread(exchange_trade.portfolio)
+        telegram.send(telegram.format_portfolio(data))
     elif cmd in ("stats", "stat"):
         telegram.send(telegram.format_weekly(journal.weekly_stats()))
     elif cmd in ("open", "ochiq"):

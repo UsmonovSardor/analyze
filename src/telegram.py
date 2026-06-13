@@ -186,12 +186,26 @@ def format_help() -> str:
     return (
         "🤖 <b>Trading Analyst — buyruqlar</b>\n\n"
         "<code>/analyze BTC</code> — juftlikni hoziroq Claude bilan to'liq tahlil qilish\n"
+        "<code>/balance</code> — Binance spot balans va portfel\n"
         "<code>/stats</code> — haftalik statistika (strategiya bo'yicha)\n"
         "<code>/open</code> — ochiq signallar ro'yxati\n"
         "<code>/help</code> — shu yordam\n\n"
         "Bot 24/7 o'zi ham skanerlaydi va kuchli setup topsa signal yuboradi.\n"
         "⚠️ <i>Bu moliyaviy maslahat emas</i>"
     )
+
+
+def format_portfolio(data: dict) -> str:
+    if not data.get("ok"):
+        return f"❌ {data.get('error', 'balansni olishda xato')}"
+    holdings = data["holdings"]
+    if not holdings:
+        return "💼 <b>Binance Spot portfel</b>\n\nPortfel bo'sh (0 USDT).\nSavdo uchun avval depozit qiling."
+    lines = [f"💼 <b>Binance Spot portfel</b>", f"Jami: <b>${data['total_usd']:,.2f}</b>", ""]
+    for h in holdings:
+        amt = f"{h['amount']:.6f}".rstrip("0").rstrip(".")
+        lines.append(f"• <b>{h['asset']}</b>: {amt}  (≈ ${h['usd']:,.2f})")
+    return "\n".join(lines)
 
 
 def format_open(rows: list) -> str:

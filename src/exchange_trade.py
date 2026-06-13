@@ -34,6 +34,36 @@ def quote_balance(quote: str = "USDT") -> float:
     return float(bal.get("free", {}).get(quote, 0) or 0)
 
 
+def portfolio() -> dict:
+    """Read-only snapshot of spot balances valued in USDT. Works only where Binance
+    is reachable (the Mac); returns a 451 note otherwise."""
+    from .data import _exchange as price_src
+    try:
+        bal = client().fetch_balance()
+    except ccxt.BaseError as exc:
+        msg = str(exc)
+        if "451" in msg or "restricted location" in msg:
+            return {"ok": False, "error": "Binance bu serverdan bloklangan (451). "
+                    "Balansni ko'rish uchun botni Mac'da ishga tushiring."}
+        return {"ok": False, "error": msg[:200]}
+
+    holdings, total = [], 0.0
+    for asset, amount in bal.get("total", {}).items():
+        if not amount or amount <= 0:
+            continue
+        if asset in ("USDT", "USDC", "FDUSD", "BUSD"):
+            usd = float(amount)
+        else:
+            try:
+                usd = float(amount) * float(price_src.fetch_ticker(f"{asset}/USDT")["last"])
+            except Exception:
+                usd = 0.0
+        total += usd
+        holdings.append({"asset": asset, "amount": float(amount), "usd": usd})
+    holdings.sort(key=lambda h: h["usd"], reverse=True)
+    return {"ok": True, "holdings": holdings, "total_usd": total}
+
+
 def _round_amount(symbol: str, amount: float) -> float:
     return float(client().amount_to_precision(symbol, amount))
 
