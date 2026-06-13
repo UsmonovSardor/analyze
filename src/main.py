@@ -20,6 +20,21 @@ def send_chart(symbol: str, snap: dict, sig: dict | None = None):
         print(f"[chart] error for {symbol}:\n{traceback.format_exc()}")
 
 
+def send_outcome_chart(row: dict, exit_price: float, r_val: float, event: str):
+    """Post the closed-trade chart with the exit marked and WIN/LOSS banner."""
+    try:
+        snap = snapshot(row["symbol"], config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+        sig = {"signal": "long", "symbol": row["symbol"], "setup": row.get("setup"),
+               "score": row.get("score"), "entry": row["entry"], "stop_loss": row["stop_loss"],
+               "tp1": row["tp1"], "tp2": row["tp2"], "tp3": row["tp3"]}
+        png = chart.render(row["symbol"], snap, sig, {"exit": exit_price, "r_val": r_val, "event": event})
+        verdict = "✅ ISHLADI" if r_val > 0.05 else ("⚪ breakeven" if abs(r_val) <= 0.05 else "🛑 ishlamadi")
+        telegram.send_photo(png, caption=f"📊 <b>#{row['id']} {row['symbol']}</b> natijasi: "
+                                         f"{verdict} · <b>{r_val:+.2f}R</b>")
+    except Exception:
+        print(f"[outcome-chart] error #{row['id']}:\n{traceback.format_exc()}")
+
+
 def last_price(symbol: str) -> float:
     return float(_px.fetch_ticker(symbol)["last"])
 
@@ -135,10 +150,12 @@ def check_outcomes():
                 r_val = realized_r(row, effective_sl)
                 journal.update_status(row["id"], event, r_val, close=True)
                 telegram.send(telegram.format_outcome(row, event, r_val))
+                send_outcome_chart(row, effective_sl, r_val, event)
             elif hi >= row["tp3"] and row["status"] == "tp2":
                 r_val = realized_r(row, row["tp3"])
                 journal.update_status(row["id"], "tp3", r_val, close=True)
                 telegram.send(telegram.format_outcome(row, "tp3", r_val))
+                send_outcome_chart(row, row["tp3"], r_val, "tp3")
             elif hi >= row["tp2"] and row["status"] == "tp1":
                 journal.update_status(row["id"], "tp2")
                 telegram.send(telegram.format_outcome(row, "tp2"))
@@ -221,8 +238,17 @@ async def telegram_poller():
                 if cb:
                     action, _, sid = cb.get("data", "").partition(":")
                     telegram.answer_callback(cb["id"])
-                    if action == "exec" and config.trading_enabled():
-                        print(f"[exec] #{sid}: {await asyncio.to_thread(_try_execute, int(sid))}")
+                    if action == "auto":
+                        if config.trading_enabled():
+                            telegram.send(f"🤖 Avto savdo bajarilmoqda #{sid}...")
+                            print(f"[auto] #{sid}: {await asyncio.to_thread(_try_execute, int(sid))}")
+                        else:
+                            telegram.send("⚠️ Binance ulanmagan. Avto savdo uchun avval API "
+                                          "key qo'shing (Spot Trading ruxsati bilan).")
+                    elif action == "manual":
+                        sg = journal.get_signal(int(sid))
+                        if sg:
+                            telegram.send(telegram.format_manual_plan(sg, int(sid)))
                     elif action == "skip":
                         telegram.send(f"❌ Signal #{sid} o'tkazib yuborildi.")
                     continue

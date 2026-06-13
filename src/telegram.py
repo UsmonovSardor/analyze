@@ -87,10 +87,28 @@ def _pct(a: float, b: float) -> str:
 
 
 def execute_keyboard(sig_id: int) -> dict:
-    return {"inline_keyboard": [[
-        {"text": "✅ Bajarish", "callback_data": f"exec:{sig_id}"},
-        {"text": "❌ O'tkazib yuborish", "callback_data": f"skip:{sig_id}"},
-    ]]}
+    return {"inline_keyboard": [
+        [{"text": "🤖 Avto savdo", "callback_data": f"auto:{sig_id}"},
+         {"text": "✍️ Qo'lda savdo", "callback_data": f"manual:{sig_id}"}],
+        [{"text": "❌ O'tkazib yuborish", "callback_data": f"skip:{sig_id}"}],
+    ]}
+
+
+def format_manual_plan(sig: dict, sig_id: int) -> str:
+    """Copy-paste plan for the user to place the order themselves on Binance."""
+    e, sl = float(sig["entry"]), float(sig["stop_loss"])
+    return (
+        f"✍️ <b>QO'LDA SAVDO rejasi</b> — #{sig_id} {sig['symbol']}\n\n"
+        f"1️⃣ Binance Spot'da <b>{sig['symbol']}</b> oching\n"
+        f"2️⃣ <b>Limit Buy</b> qo'ying: <code>{fmt_price(e)}</code>\n"
+        f"3️⃣ <b>OCO / TP-SL</b> sozlang:\n"
+        f"   🛑 Stop-loss: <code>{fmt_price(sl)}</code>\n"
+        f"   🎯 Take-profit (TP2): <code>{fmt_price(sig['tp2'])}</code>\n"
+        f"4️⃣ Hajm: depozitning 1% riskiga moslang\n\n"
+        f"📌 TP1 (<code>{fmt_price(sig['tp1'])}</code>) urilganda 40% oling va stop'ni "
+        f"kirish narxiga (breakeven) ko'chiring.\n"
+        f"Bot bu signal natijasini avtomatik kuzatib, sizga xabar beradi."
+    )
 
 
 def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:

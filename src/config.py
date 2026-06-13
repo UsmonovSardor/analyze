@@ -1,10 +1,14 @@
 import os
 
-# Watchlist: liquid Binance spot pairs
+# Watchlist: liquid Binance spot pairs (broad coverage — the screener filters cheaply)
 SYMBOLS = [
     "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
     "DOGE/USDT", "ADA/USDT", "LINK/USDT", "AVAX/USDT", "TON/USDT",
     "DOT/USDT", "NEAR/USDT", "SUI/USDT", "APT/USDT", "LTC/USDT",
+    "TRX/USDT", "MATIC/USDT", "ATOM/USDT", "UNI/USDT", "FIL/USDT",
+    "INJ/USDT", "ARB/USDT", "OP/USDT", "AAVE/USDT", "RNDR/USDT",
+    "SEI/USDT", "TIA/USDT", "FET/USDT", "RUNE/USDT", "ICP/USDT",
+    "HBAR/USDT", "ALGO/USDT", "STX/USDT", "GALA/USDT", "SAND/USDT",
 ]
 
 ENTRY_TF = "1h"

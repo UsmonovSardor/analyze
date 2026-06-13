@@ -15,7 +15,9 @@ from matplotlib.patches import Rectangle
 BARS = 120
 
 
-def render(symbol: str, snap: dict, sig: dict | None = None) -> bytes:
+def render(symbol: str, snap: dict, sig: dict | None = None, result: dict | None = None) -> bytes:
+    """result (optional): {"exit": price, "r_val": float, "event": str} draws the
+    closed-trade outcome — exit line + WIN/LOSS banner."""
     e = snap["entry_tf"].tail(BARS).reset_index(drop=True)
     x = list(range(len(e)))
 
@@ -75,6 +77,21 @@ def render(symbol: str, snap: dict, sig: dict | None = None) -> bytes:
                     arrowprops=dict(arrowstyle="->", color="#ffffff", lw=2))
         meta_setup = sig.get("setup", "")
         title = f"{symbol}  ·  1h  ·  LONG (Setup {meta_setup}, {sig.get('score')}/10)"
+
+        # closed-trade outcome overlay
+        if result:
+            exit_p, r_val = float(result["exit"]), float(result["r_val"])
+            win = r_val > 0.05
+            be = abs(r_val) <= 0.05
+            ex_color = "#26a69a" if win else ("#9aa0aa" if be else "#ef5350")
+            ax.axhline(exit_p, color=ex_color, linewidth=2, alpha=0.95, zorder=6)
+            ax.text(0.4, exit_p, f" CHIQISH: {exit_p:.4f}".rstrip("0").rstrip("."), color=ex_color,
+                    fontsize=9, va="center", ha="left", fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.15", fc="#0e1117", ec=ex_color, alpha=0.9))
+            verdict = "ISHLADI ✓" if win else ("BREAKEVEN" if be else "ISHLAMADI ✕")
+            ax.text(0.5, 0.96, f"{verdict}   ·   {r_val:+.2f}R", transform=ax.transAxes,
+                    fontsize=15, fontweight="bold", ha="center", va="top", color=ex_color,
+                    bbox=dict(boxstyle="round,pad=0.4", fc="#1a1d26", ec=ex_color, alpha=0.95))
 
     ax.set_title(title, color="#ffffff", fontsize=14, fontweight="bold", pad=12)
     ax.legend(loc="lower left", facecolor="#1a1d26", edgecolor="none", labelcolor="#cfcfcf", fontsize=9)
