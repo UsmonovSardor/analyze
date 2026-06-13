@@ -27,9 +27,19 @@ def _skill() -> str:
     return _SKILL
 
 
-def build_prompt(snap, setup_hint: str, btc_snap) -> str:
-    return f"""Analyze this candidate setup. Screener hint: Setup {setup_hint} (verify it yourself, the hint may be wrong).
+def _performance_note(perf: dict) -> str:
+    if not perf:
+        return ""
+    rows = []
+    for setup, s in perf.items():
+        rows.append(f"- Setup {setup}: {s['wins']}/{s['closed']} win ({s['win_rate']}%), {s['total_r']:+.2f}R total")
+    return ("\n=== Recent performance of each setup (last 30d) — be MORE selective on under-performing "
+            "setups, demand higher confluence there ===\n" + "\n".join(rows) + "\n")
 
+
+def build_prompt(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> str:
+    return f"""Analyze this candidate setup. Screener hint: Setup {setup_hint} (verify it yourself, the hint may be wrong).
+{_performance_note(perf or {})}
 SYMBOL: {snap['symbol']}
 
 === 1h candles with indicators (newest last) ===
@@ -49,7 +59,7 @@ SYMBOL: {snap['symbol']}
 Follow the skill process exactly. Output ONLY the JSON object."""
 
 
-async def analyze(snap, setup_hint: str, btc_snap) -> dict:
+async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> dict:
     options = ClaudeAgentOptions(
         system_prompt=_skill(),
         model=config.CLAUDE_MODEL,
@@ -57,7 +67,7 @@ async def analyze(snap, setup_hint: str, btc_snap) -> dict:
         allowed_tools=[],
     )
     text = ""
-    async for message in query(prompt=build_prompt(snap, setup_hint, btc_snap), options=options):
+    async for message in query(prompt=build_prompt(snap, setup_hint, btc_snap, perf), options=options):
         for block in getattr(message, "content", []) or []:
             if hasattr(block, "text"):
                 text += block.text

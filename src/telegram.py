@@ -1,63 +1,150 @@
 """Telegram delivery (plain Bot API via requests — no framework needed)."""
+import json
+
 import requests
 
 from . import config
+from .strategy_meta import render_scorecard, strategy
 
 API = "https://api.telegram.org/bot{token}/{method}"
 
 
-def send(text: str):
-    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
-        print("[telegram] not configured, message:\n" + text)
-        return
-    r = requests.post(
-        API.format(token=config.TELEGRAM_BOT_TOKEN, method="sendMessage"),
-        json={"chat_id": config.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"},
-        timeout=15,
-    )
-    if not r.ok:
-        print(f"[telegram] send failed: {r.status_code} {r.text[:200]}")
+def _call(method: str, payload: dict):
+    if not config.TELEGRAM_BOT_TOKEN:
+        print(f"[telegram] not configured ({method}):\n" + payload.get("text", ""))
+        return None
+    try:
+        r = requests.post(
+            API.format(token=config.TELEGRAM_BOT_TOKEN, method=method),
+            json=payload, timeout=15,
+        )
+        if not r.ok:
+            print(f"[telegram] {method} failed: {r.status_code} {r.text[:200]}")
+        return r.json() if r.ok else None
+    except requests.RequestException as exc:
+        print(f"[telegram] {method} network error: {exc}")
+        return None
+
+
+def send(text: str, reply_markup: dict | None = None) -> int | None:
+    payload = {"chat_id": config.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML",
+               "disable_web_page_preview": True}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    res = _call("sendMessage", payload)
+    return res["result"]["message_id"] if res and res.get("ok") else None
+
+
+def edit(message_id: int, text: str, reply_markup: dict | None = None):
+    payload = {"chat_id": config.TELEGRAM_CHAT_ID, "message_id": message_id,
+               "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    payload["reply_markup"] = reply_markup or {"inline_keyboard": []}
+    _call("editMessageText", payload)
+
+
+def answer_callback(callback_id: str, text: str = ""):
+    _call("answerCallbackQuery", {"callback_query_id": callback_id, "text": text})
+
+
+def get_updates(offset: int, timeout: int = 0) -> list[dict]:
+    res = _call("getUpdates", {"offset": offset, "timeout": timeout,
+                               "allowed_updates": ["callback_query"]})
+    return res["result"] if res and res.get("ok") else []
 
 
 def fmt_price(p: float) -> str:
-    return f"{p:.6f}".rstrip("0").rstrip(".") if p < 10 else f"{p:,.2f}"
+    p = float(p)
+    if p >= 100:
+        return f"{p:,.2f}"
+    if p >= 1:
+        return f"{p:.4f}".rstrip("0").rstrip(".")
+    return f"{p:.6f}".rstrip("0").rstrip(".")
 
 
-def format_signal(sig: dict, sig_id: int) -> str:
-    e, sl = sig["entry"], sig["stop_loss"]
+def _pct(a: float, b: float) -> str:
+    return f"{(a / b - 1) * 100:+.2f}%"
+
+
+def execute_keyboard(sig_id: int) -> dict:
+    return {"inline_keyboard": [[
+        {"text": "✅ Bajarish", "callback_data": f"exec:{sig_id}"},
+        {"text": "❌ O'tkazib yuborish", "callback_data": f"skip:{sig_id}"},
+    ]]}
+
+
+def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
+    meta = strategy(sig.get("setup", ""))
+    e, sl = float(sig["entry"]), float(sig["stop_loss"])
     r = e - sl
-    return (
-        f"🟢 <b>LONG #{sig_id} — {sig['symbol']}</b>  (Setup {sig.get('setup','?')}, {sig.get('score')}/10)\n\n"
-        f"📍 Entry: <code>{fmt_price(e)}</code>\n"
-        f"🛑 Stop-loss: <code>{fmt_price(sl)}</code>  (-1R)\n"
-        f"🎯 TP1: <code>{fmt_price(sig['tp1'])}</code>  (+{(sig['tp1']-e)/r:.1f}R, 40%)\n"
-        f"🎯 TP2: <code>{fmt_price(sig['tp2'])}</code>  (+{(sig['tp2']-e)/r:.1f}R, 40%)\n"
-        f"🎯 TP3: <code>{fmt_price(sig['tp3'])}</code>  (+{(sig['tp3']-e)/r:.1f}R, 20%)\n\n"
-        f"💡 {sig.get('reasoning','')}\n\n"
-        f"⚖️ Risk: depozitning 1% | TP1 dan keyin SL → breakeven\n"
-        f"⚠️ Moliyaviy maslahat emas"
-    )
+    tp1, tp2, tp3 = float(sig["tp1"]), float(sig["tp2"]), float(sig["tp3"])
+    risk_pct = (e - sl) / e * 100
+
+    lines = [
+        f"{meta['emoji']} <b>LONG SIGNAL #{sig_id}</b> — <b>{sig['symbol']}</b>",
+        f"<i>{meta['name']} · ishonch {sig.get('score')}/10</i>",
+        "",
+        "<b>━━━ Kirish rejasi ━━━</b>",
+        f"📍 Entry:  <code>{fmt_price(e)}</code>",
+        f"🛑 Stop:   <code>{fmt_price(sl)}</code>  <i>(-1R · {risk_pct:.2f}%)</i>",
+        f"🎯 TP1:    <code>{fmt_price(tp1)}</code>  <i>(+{(tp1-e)/r:.1f}R · {_pct(tp1,e)} · 40%)</i>",
+        f"🎯 TP2:    <code>{fmt_price(tp2)}</code>  <i>(+{(tp2-e)/r:.1f}R · {_pct(tp2,e)} · 40%)</i>",
+        f"🎯 TP3:    <code>{fmt_price(tp3)}</code>  <i>(+{(tp3-e)/r:.1f}R · {_pct(tp3,e)} · 20%)</i>",
+        "",
+        "<b>━━━ Qaysi strategiya ━━━</b>",
+        f"{meta['emoji']} <b>{meta['name']}</b>",
+        f"<i>{meta['tagline']}</i>",
+        "",
+        "<b>━━━ Confluence tahlili ━━━</b>",
+        f"<pre>{render_scorecard(sig.get('scorecard', {}))}</pre>",
+    ]
+    if market_ctx:
+        lines += ["", f"🌐 <b>Bozor:</b> {market_ctx}"]
+    lines += [
+        "",
+        "<b>━━━ Asoslash ━━━</b>",
+        f"💡 {sig.get('reasoning', '')}",
+        "",
+        "⚖️ Risk: depozitning 1% · TP1 dan keyin SL→breakeven",
+        "⚠️ <i>Bu moliyaviy maslahat emas</i>",
+    ]
+    return "\n".join(lines)
 
 
 def format_outcome(row: dict, event: str, r_val: float | None = None) -> str:
+    meta = strategy(row.get("setup", ""))
     label = {
-        "tp1": "🎯 TP1 urildi — SL endi breakeven'da",
-        "tp2": "🎯 TP2 urildi",
-        "tp3": "✅ TP3 urildi — to'liq yopildi",
-        "stopped": "🛑 Stop-loss urildi",
-        "breakeven": "⚪ Breakeven'da yopildi",
+        "tp1": "🎯 <b>TP1 urildi</b> — 40% olindi, SL endi breakeven'da",
+        "tp2": "🎯 <b>TP2 urildi</b> — yana 40% olindi",
+        "tp3": "✅ <b>TP3 urildi</b> — pozitsiya to'liq yopildi",
+        "stopped": "🛑 <b>Stop-loss urildi</b>",
+        "breakeven": "⚪ <b>Breakeven'da yopildi</b> — zarar yo'q",
     }[event]
-    txt = f"{label}\n<b>#{row['id']} {row['symbol']}</b>"
+    txt = f"{label}\n{meta['emoji']} #{row['id']} <b>{row['symbol']}</b> · {meta['name']}"
     if r_val is not None:
-        txt += f"  | Natija: <b>{r_val:+.2f}R</b>"
+        emo = "🟢" if r_val > 0 else ("⚪" if abs(r_val) < 0.05 else "🔴")
+        txt += f"\n{emo} Natija: <b>{r_val:+.2f}R</b>"
     return txt
 
 
 def format_weekly(stats: dict) -> str:
-    return (
-        f"📊 <b>Haftalik hisobot</b>\n\n"
-        f"Yopilgan signallar: {stats['closed']}\n"
-        f"Yutuq: {stats['wins']} ({stats['win_rate']}%)\n"
-        f"Jami natija: <b>{stats['total_r']:+.2f}R</b>\n"
-        f"Ochiq signallar: {stats['open']}"
-    )
+    lines = [
+        "📊 <b>HAFTALIK HISOBOT</b>",
+        "",
+        f"Yopilgan: <b>{stats['closed']}</b>  ·  Yutuq: <b>{stats['wins']}</b> ({stats['win_rate']}%)",
+        f"Jami natija: <b>{stats['total_r']:+.2f}R</b>  ·  Ochiq: {stats['open']}",
+    ]
+    by = stats.get("by_setup", {})
+    if by:
+        lines += ["", "<b>Strategiya bo'yicha:</b>"]
+        for setup, s in by.items():
+            meta = strategy(setup)
+            lines.append(f"{meta['emoji']} {meta['name']}: {s['wins']}/{s['closed']} "
+                         f"({s['win_rate']}%) · {s['total_r']:+.2f}R")
+    return "\n".join(lines)
+
+
+def format_trade_filled(sig_id: int, symbol: str, qty: float, entry: float, oco: bool) -> str:
+    txt = (f"💰 <b>Savdo bajarildi</b> #{sig_id} {symbol}\n"
+           f"Sotib olindi: <code>{qty}</code> @ ~<code>{fmt_price(entry)}</code>")
+    txt += "\n🛡 TP/SL OCO order qo'yildi" if oco else "\n⚠️ OCO qo'yilmadi — qo'lda nazorat qiling"
+    return txt

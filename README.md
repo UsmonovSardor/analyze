@@ -46,6 +46,41 @@ Telegram sozlanmagan bo'lsa xabarlar konsolga chiqadi — xavfsiz test rejimi.
 Hammasi `src/config.py` da: juftliklar ro'yxati, skan oraliq, kunlik signal limiti,
 minimal score (7/10), minimal R:R (TP2 gacha 1:2), Claude kunlik chaqiruv byudjeti.
 
+## Backtest (strategiyani tarixda sinash)
+
+```bash
+python -m src.backtest                 # barcha juftliklar, 120 kun
+python -m src.backtest BTC/USDT 180    # bitta juftlik, 180 kun
+```
+
+Bu deterministik qatlam (screener + risk qoidalari) bo'yicha sinaydi — Claude'siz,
+shuning uchun jonli natijaga nisbatan konservativ baho. "Asosiy edge bormi?" degan
+savolga javob beradi.
+
+## Jonli savdo (Binance, ixtiyoriy)
+
+`.env`da `BINANCE_API_KEY`/`SECRET` to'ldirilsa, signal ostida **✅ Bajarish /
+❌ O'tkazib yuborish** tugmalari chiqadi (semi rejim). Bajarish bosilganda:
+market buy + OCO (TP2/SL) order qo'yiladi. OCO Binance serverida turadi, shuning
+uchun bot o'chsa ham stop-loss ishlaydi.
+
+- API key: **faqat Spot Trading**, Withdrawal **o'chirilgan**.
+- `TRADING_MODE`: `semi` (tugma bilan tasdiq) | `auto` | `off`.
+- Himoyalar: `RISK_PER_TRADE` (1%), `MAX_TRADE_QUOTE` (USDT cap), `DAILY_LOSS_STOP_R` (-3R).
+- ⚠️ `api.binance.com` Railway US IP'dan bloklangan — savdoni Binance'ga ulanadigan
+  joydan (Mac yoki UZ VPS) ishga tushiring. Signal/hisobot Railway'da qoladi.
+
+## Hisobotlar
+
+Har signal: qaysi strategiya (Trend Pullback / Range Breakout), entry/SL/TP1-3 (R va %),
+confluence scorecard (har omil bo'yicha ball), asoslash, bozor konteksti. Yopilganda
+natija R bilan, har hafta strategiya bo'yicha win-rate.
+
+## Feedback loop
+
+Har skanda oxirgi 30 kunlik strategiya statistikasi Claude'ga uzatiladi — kam ishlayotgan
+setup uchun bot avtomatik talabchanroq bo'ladi.
+
 ## Muhim
 
 - Avval kamida 2-4 hafta kuzating (paper-trading) — haftalik hisobotdagi win-rate va

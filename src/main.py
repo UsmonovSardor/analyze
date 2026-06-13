@@ -1,5 +1,5 @@
-"""Main loop: screener scan -> Claude analysis -> risk gate -> Telegram.
-Plus: open-signal outcome tracking and weekly stats."""
+"""Main loop: screener scan -> Claude analysis -> risk gate -> Telegram (+ optional trade).
+Plus: open-signal outcome tracking, weekly stats, and a Telegram button poller."""
 import asyncio
 import time
 import traceback
@@ -14,11 +14,27 @@ def last_price(symbol: str) -> float:
     return float(_px.fetch_ticker(symbol)["last"])
 
 
+def _last(df, col):
+    return float(df[col].iloc[-1])
+
+
+def market_context(btc_snap) -> str:
+    """One-line human-readable market regime for the report header."""
+    ctx = btc_snap["context_tf"]
+    price, ema200 = _last(ctx, "close"), _last(ctx, "ema200")
+    trend = "ko'tarilish 📈" if price > ema200 else "pasayish 📉"
+    rsi = _last(btc_snap["entry_tf"], "rsi")
+    return f"BTC {trend} (4h) · BTC RSI {rsi:.0f}"
+
+
 async def scan_once():
     btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
     if not screener.btc_context_ok(btc_snap):
         print("[scan] BTC 4h downtrend — skipping cycle")
         return
+
+    perf = journal.setup_performance(30)  # feedback loop: recent per-setup win-rate
+    ctx_str = market_context(btc_snap)
 
     for symbol in config.SYMBOLS:
         try:
@@ -32,8 +48,7 @@ async def scan_once():
                 continue
 
             snap = btc_snap if symbol == "BTC/USDT" else snapshot(
-                symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES
-            )
+                symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
             hint = screener.find_candidate(snap)
             if not hint:
                 continue
@@ -44,7 +59,7 @@ async def scan_once():
 
             print(f"[scan] candidate {symbol} setup {hint} -> Claude")
             journal.bump_claude_calls()
-            sig = await analyze(snap, hint, btc_snap)
+            sig = await analyze(snap, hint, btc_snap, perf)
 
             ok, why = risk.validate(sig, last_price(symbol))
             if not ok:
@@ -52,10 +67,33 @@ async def scan_once():
                 continue
 
             sig_id = journal.add_signal(sig)
-            telegram.send(telegram.format_signal(sig, sig_id))
+            kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
+            telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)
+            if config.trading_enabled() and config.TRADING_MODE == "auto":
+                _try_execute(sig_id)
             print(f"[signal] #{sig_id} {symbol} posted")
         except Exception:
             print(f"[scan] error on {symbol}:\n{traceback.format_exc()}")
+
+
+def _try_execute(sig_id: int):
+    """Place a real order for a signal (guarded by daily loss stop)."""
+    from . import exchange_trade
+    sig = journal.get_signal(sig_id)
+    if not sig or sig["executed"]:
+        return "already executed or missing"
+    if journal.realized_r_today() <= config.DAILY_LOSS_STOP_R:
+        telegram.send(f"⛔ Kunlik zarar limiti ({config.DAILY_LOSS_STOP_R}R) — bugun savdo to'xtatildi.")
+        return "daily loss stop"
+    res = exchange_trade.execute_signal(sig)
+    if not res.get("ok"):
+        telegram.send(f"❌ Savdo bajarilmadi #{sig_id}: {res.get('error')}")
+        return res.get("error")
+    journal.mark_executed(sig_id, res["qty"], res["fill"], res.get("oco_id"))
+    telegram.send(telegram.format_trade_filled(sig_id, sig["symbol"], res["qty"], res["fill"], res["oco"]))
+    if res.get("warn"):
+        telegram.send(f"⚠️ #{sig_id}: {res['warn']}")
+    return "ok"
 
 
 def realized_r(row: dict, exit_price: float) -> float:
@@ -76,9 +114,7 @@ def check_outcomes():
         try:
             price_now = last_price(row["symbol"])
             hi = lo = price_now
-            # use candle extremes since the last check for hit detection
-            candles = _px.fetch_ohlcv(row["symbol"], timeframe="5m", limit=3)
-            for c in candles:
+            for c in _px.fetch_ohlcv(row["symbol"], timeframe="5m", limit=3):
                 hi, lo = max(hi, c[2]), min(lo, c[3])
 
             effective_sl = row["entry"] if row["status"] in ("tp1", "tp2") else row["stop_loss"]
@@ -102,13 +138,34 @@ def check_outcomes():
             print(f"[outcome] error on #{row['id']}:\n{traceback.format_exc()}")
 
 
-async def main():
-    print("[boot] trading-signal-bot starting")
+async def telegram_poller():
+    """Long-poll for inline-button presses (Execute / Skip) in semi-auto mode."""
+    offset = 0
+    while True:
+        try:
+            updates = await asyncio.to_thread(telegram.get_updates, offset, 25)
+            for u in updates:
+                offset = u["update_id"] + 1
+                cb = u.get("callback_query")
+                if not cb:
+                    continue
+                data = cb.get("data", "")
+                action, _, sid = data.partition(":")
+                telegram.answer_callback(cb["id"])
+                if action == "exec" and config.trading_enabled():
+                    result = await asyncio.to_thread(_try_execute, int(sid))
+                    print(f"[exec] #{sid}: {result}")
+                elif action == "skip":
+                    telegram.send(f"❌ Signal #{sid} o'tkazib yuborildi.")
+        except Exception:
+            print(f"[poller] error:\n{traceback.format_exc()}")
+            await asyncio.sleep(5)
+
+
+async def scan_loop():
     last_scan = last_outcome = 0.0
     last_weekly = time.time()
     while True:
-        # the loop must survive any error (exchange outage, network, etc.) —
-        # a crash here causes a container restart storm
         try:
             now = time.time()
             if now - last_scan >= config.SCAN_INTERVAL_SEC:
@@ -123,6 +180,15 @@ async def main():
         except Exception:
             print(f"[loop] error:\n{traceback.format_exc()}")
         await asyncio.sleep(30)
+
+
+async def main():
+    mode = config.TRADING_MODE if config.trading_enabled() else "off (signals only)"
+    print(f"[boot] trading-signal-bot starting · trading={mode}")
+    tasks = [scan_loop()]
+    if config.trading_enabled() and config.TRADING_MODE == "semi":
+        tasks.append(telegram_poller())  # only needed to receive Execute buttons
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
