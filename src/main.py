@@ -207,13 +207,19 @@ async def analyze_on_demand(symbol: str) -> str:
 
 
 async def handle_command(text: str):
-    parts = text.strip().split()
-    cmd = parts[0].lower().lstrip("/").split("@")[0]
+    # tolerate emoji/text before the command (reply-keyboard buttons send "📊 /analyze BTC")
+    tokens = text.strip().split()
+    idx = next((i for i, t in enumerate(tokens) if t.startswith("/")), None)
+    if idx is None:
+        return
+    cmd = tokens[idx].lower().lstrip("/").split("@")[0]
+    arg = tokens[idx + 1] if len(tokens) > idx + 1 else None
+
     if cmd in ("analyze", "analiz", "a"):
-        if len(parts) < 2:
-            telegram.send("Foydalanish: <code>/analyze BTC</code>")
+        if not arg:
+            telegram.send("Foydalanish: <code>/analyze BTC</code>", reply_markup=telegram.main_keyboard())
             return
-        symbol = _norm_symbol(parts[1])
+        symbol = _norm_symbol(arg)
         telegram.send(f"🔍 <b>{symbol}</b> tahlil qilinmoqda...")
         msg = await analyze_on_demand(symbol)
         if msg:
@@ -229,8 +235,8 @@ async def handle_command(text: str):
         telegram.send(telegram.format_weekly(journal.weekly_stats()))
     elif cmd in ("open", "ochiq"):
         telegram.send(telegram.format_open(journal.open_signals()))
-    elif cmd in ("help", "start", "yordam"):
-        telegram.send(telegram.format_help())
+    elif cmd in ("help", "start", "yordam", "menu"):
+        telegram.send(telegram.format_help(), reply_markup=telegram.main_keyboard())
 
 
 async def telegram_poller():

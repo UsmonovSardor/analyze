@@ -86,6 +86,19 @@ def _pct(a: float, b: float) -> str:
     return f"{(a / b - 1) * 100:+.2f}%"
 
 
+def main_keyboard() -> dict:
+    """Persistent tap-to-send command buttons shown above the input field."""
+    return {
+        "keyboard": [
+            ["📊 /analyze BTC", "💼 /balance"],
+            ["📈 /stats", "📂 /open"],
+            ["❓ /help"],
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True,
+    }
+
+
 def execute_keyboard(sig_id: int) -> dict:
     return {"inline_keyboard": [
         [{"text": "🤖 Avto savdo", "callback_data": f"auto:{sig_id}"},
