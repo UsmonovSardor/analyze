@@ -26,8 +26,8 @@ def _call(method: str, payload: dict, timeout: int = 15):
         return None
 
 
-def send(text: str, reply_markup: dict | None = None) -> int | None:
-    payload = {"chat_id": config.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML",
+def send(text: str, reply_markup: dict | None = None, chat_id=None) -> int | None:
+    payload = {"chat_id": chat_id or config.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML",
                "disable_web_page_preview": True}
     if reply_markup:
         payload["reply_markup"] = reply_markup
@@ -35,11 +35,11 @@ def send(text: str, reply_markup: dict | None = None) -> int | None:
     return res["result"]["message_id"] if res and res.get("ok") else None
 
 
-def send_photo(png: bytes, caption: str = "", reply_markup: dict | None = None) -> int | None:
+def send_photo(png: bytes, caption: str = "", reply_markup: dict | None = None, chat_id=None) -> int | None:
     if not config.TELEGRAM_BOT_TOKEN:
         print(f"[telegram] not configured (photo):\n{caption[:200]}")
         return None
-    data = {"chat_id": config.TELEGRAM_CHAT_ID, "caption": caption[:1024], "parse_mode": "HTML"}
+    data = {"chat_id": chat_id or config.TELEGRAM_CHAT_ID, "caption": caption[:1024], "parse_mode": "HTML"}
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
     try:
@@ -197,13 +197,21 @@ def format_weekly(stats: dict) -> str:
 
 def format_help() -> str:
     return (
-        "🤖 <b>Trading Analyst — buyruqlar</b>\n\n"
-        "<code>/analyze BTC</code> — juftlikni hoziroq Claude bilan to'liq tahlil qilish\n"
-        "<code>/balance</code> — Binance spot balans va portfel\n"
-        "<code>/stats</code> — haftalik statistika (strategiya bo'yicha)\n"
-        "<code>/open</code> — ochiq signallar ro'yxati\n"
-        "<code>/help</code> — shu yordam\n\n"
-        "Bot 24/7 o'zi ham skanerlaydi va kuchli setup topsa signal yuboradi.\n"
+        "👋 <b>Trading Analyst Bot</b>\n"
+        "📊 AI-asosli crypto spot tahlil va signal tizimi\n\n"
+        "📌 <b>Imkoniyatlar:</b>\n"
+        "• 24/7 avtomatik skanerlash (35+ juftlik)\n"
+        "• Claude AI bilan chuqur tahlil + grafik\n"
+        "• Entry / TP1-3 / Stop-loss aniq belgilangan\n"
+        "• Avto va qo'lda savdo (Binance)\n"
+        "• Signal natijasini avtomatik kuzatish\n\n"
+        "🔘 <b>Buyruqlar:</b>\n"
+        "📊 <code>/analyze BTC</code> — juftlikni tahlil qilish\n"
+        "💼 <code>/balance</code> — Binance portfel\n"
+        "📈 <code>/stats</code> — haftalik statistika\n"
+        "📂 <code>/open</code> — ochiq signallar\n"
+        "❓ <code>/help</code> — yordam\n\n"
+        "Pastdagi tugmalardan foydalaning 👇\n"
         "⚠️ <i>Bu moliyaviy maslahat emas</i>"
     )
 

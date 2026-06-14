@@ -10,12 +10,13 @@ from .data import _exchange as _px
 from .data import snapshot
 
 
-def send_chart(symbol: str, snap: dict, sig: dict | None = None):
+def send_chart(symbol: str, snap: dict, sig: dict | None = None, chat_id=None):
     """Render and post an annotated chart; never let a chart error block a signal."""
     try:
         png = chart.render(symbol, snap, sig)
         telegram.send_photo(png, caption=f"📈 <b>{symbol}</b> · 1h grafik"
-                            + (" · kirish nuqtasi belgilandi" if sig and sig.get("signal") == "long" else ""))
+                            + (" · kirish nuqtasi belgilandi" if sig and sig.get("signal") == "long" else ""),
+                            chat_id=chat_id)
     except Exception:
         print(f"[chart] error for {symbol}:\n{traceback.format_exc()}")
 
@@ -173,7 +174,7 @@ def _norm_symbol(raw: str) -> str:
     return s
 
 
-async def analyze_on_demand(symbol: str) -> str:
+async def analyze_on_demand(symbol: str, chat_id=None) -> str:
     """Run a full Claude analysis on any pair, on request, and format the report."""
     if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
         return "⏳ Bugungi Claude tahlil limiti tugadi, ertaga urinib ko'ring."
@@ -194,19 +195,19 @@ async def analyze_on_demand(symbol: str) -> str:
         if ok:
             sig_id = journal.add_signal(sig)
             kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
-            telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)
-            send_chart(symbol, snap, sig)
+            telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb, chat_id=chat_id)
+            send_chart(symbol, snap, sig, chat_id=chat_id)
             return ""  # already sent as a full signal + chart
-        send_chart(symbol, snap, None)
+        send_chart(symbol, snap, None, chat_id=chat_id)
         return (f"📊 <b>{symbol}</b> — tahlil qilindi, lekin signal BERILMADI\n"
                 f"Sabab: risk filtri ({why})\n🌐 {ctx_str}")
-    send_chart(symbol, snap, None)
+    send_chart(symbol, snap, None, chat_id=chat_id)
     return (f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n"
             f"💡 {sig.get('reason', 'kriteriylarga mos kelmadi')}\n"
             f"Ishonch: {sig.get('score', 0)}/10\n🌐 {ctx_str}")
 
 
-async def handle_command(text: str):
+async def handle_command(text: str, chat_id=None):
     # tolerate emoji/text before the command (reply-keyboard buttons send "📊 /analyze BTC")
     tokens = text.strip().split()
     idx = next((i for i, t in enumerate(tokens) if t.startswith("/")), None)
@@ -217,26 +218,27 @@ async def handle_command(text: str):
 
     if cmd in ("analyze", "analiz", "a"):
         if not arg:
-            telegram.send("Foydalanish: <code>/analyze BTC</code>", reply_markup=telegram.main_keyboard())
+            telegram.send("Foydalanish: <code>/analyze BTC</code>",
+                          reply_markup=telegram.main_keyboard(), chat_id=chat_id)
             return
         symbol = _norm_symbol(arg)
-        telegram.send(f"🔍 <b>{symbol}</b> tahlil qilinmoqda...")
-        msg = await analyze_on_demand(symbol)
+        telegram.send(f"🔍 <b>{symbol}</b> tahlil qilinmoqda...", chat_id=chat_id)
+        msg = await analyze_on_demand(symbol, chat_id=chat_id)
         if msg:
-            telegram.send(msg)
+            telegram.send(msg, chat_id=chat_id)
     elif cmd in ("balance", "balans", "portfel"):
         if not (config.BINANCE_API_KEY and config.BINANCE_API_SECRET):
-            telegram.send("⚠️ Binance ulanmagan. Balans uchun API key qo'shing.")
+            telegram.send("⚠️ Binance ulanmagan. Balans uchun API key qo'shing.", chat_id=chat_id)
             return
         from . import exchange_trade
         data = await asyncio.to_thread(exchange_trade.portfolio)
-        telegram.send(telegram.format_portfolio(data))
+        telegram.send(telegram.format_portfolio(data), chat_id=chat_id)
     elif cmd in ("stats", "stat"):
-        telegram.send(telegram.format_weekly(journal.weekly_stats()))
+        telegram.send(telegram.format_weekly(journal.weekly_stats()), chat_id=chat_id)
     elif cmd in ("open", "ochiq"):
-        telegram.send(telegram.format_open(journal.open_signals()))
+        telegram.send(telegram.format_open(journal.open_signals()), chat_id=chat_id)
     elif cmd in ("help", "start", "yordam", "menu"):
-        telegram.send(telegram.format_help(), reply_markup=telegram.main_keyboard())
+        telegram.send(telegram.format_help(), reply_markup=telegram.main_keyboard(), chat_id=chat_id)
 
 
 async def telegram_poller():
@@ -267,8 +269,9 @@ async def telegram_poller():
                     continue
                 msg = u.get("message", {})
                 text = msg.get("text", "")
-                if text.startswith("/"):
-                    await handle_command(text)
+                chat_id = msg.get("chat", {}).get("id")
+                if text and ("/" in text):
+                    await handle_command(text, chat_id=chat_id)
         except Exception:
             print(f"[poller] error:\n{traceback.format_exc()}")
             await asyncio.sleep(5)
