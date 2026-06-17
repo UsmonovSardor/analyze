@@ -11,7 +11,7 @@ from .data import df_for_prompt
 
 def _load_skill() -> str:
     parts = []
-    for name in ["SKILL.md", "strategy.md", "risk-rules.md", "signal-format.md"]:
+    for name in ["SKILL.md", "strategy.md", "candlestick-patterns.md", "price-action.md", "risk-rules.md", "signal-format.md"]:
         with open(os.path.join(config.SKILL_DIR, name)) as f:
             parts.append(f"<<< {name} >>>\n{f.read()}")
     return "\n\n".join(parts)
