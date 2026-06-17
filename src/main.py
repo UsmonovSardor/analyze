@@ -265,7 +265,10 @@ async def telegram_poller():
                         if sg:
                             telegram.send(telegram.format_manual_plan(sg, int(sid)))
                     elif action == "skip":
-                        telegram.send(f"❌ Signal #{sid} o'tkazib yuborildi.")
+                        telegram.send(
+                            f"👁️ Signal #{sid} kuzatish rejimiga olindi.\n"
+                            f"Order ochilmadi — lekin TP1/TP2/TP3/SL natijalari yuborilaveradi."
+                        )
                     continue
                 msg = u.get("message", {})
                 text = msg.get("text", "")

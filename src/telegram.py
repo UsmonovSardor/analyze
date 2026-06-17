@@ -103,7 +103,7 @@ def execute_keyboard(sig_id: int) -> dict:
     return {"inline_keyboard": [
         [{"text": "🤖 Avto savdo", "callback_data": f"auto:{sig_id}"},
          {"text": "✍️ Qo'lda savdo", "callback_data": f"manual:{sig_id}"}],
-        [{"text": "❌ O'tkazib yuborish", "callback_data": f"skip:{sig_id}"}],
+        [{"text": "👁️ Kuzatish (Test)", "callback_data": f"skip:{sig_id}"}],
     ]}
 
 
