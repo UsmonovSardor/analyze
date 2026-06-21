@@ -233,13 +233,13 @@ async def handle_command(text: str, chat_id=None):
         if msg:
             telegram.send(msg, chat_id=chat_id)
     elif cmd in ("balance", "balans", "portfel"):
-        if not (config.BINANCE_API_KEY and config.BINANCE_API_SECRET):
-            telegram.send("⚠️ Binance API key yo'q. Balansni ko'rish uchun avval sozlang.", chat_id=chat_id)
-            return
-        telegram.send("⏳ Balans olinmoqda...", chat_id=chat_id)
-        from . import exchange_trade
-        data = await asyncio.to_thread(exchange_trade.portfolio)
-        telegram.send(telegram.format_portfolio(data), chat_id=chat_id)
+        telegram.send(
+            "💼 <b>Binance portfel</b>\n\n"
+            "⚠️ Hozircha bot signals-only rejimida ishlayapti.\n"
+            "Binance serverdan bloklangan — balansni ko'rish uchun "
+            "binance.bh ilovasini to'g'ridan-to'g'ri oching.",
+            chat_id=chat_id
+        )
     elif cmd in ("stats", "stat"):
         telegram.send(telegram.format_weekly(journal.weekly_stats()), chat_id=chat_id)
     elif cmd in ("open", "ochiq"):
