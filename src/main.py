@@ -302,10 +302,31 @@ async def telegram_poller():
                     elif action == "coin":
                         symbol = sid  # sid holds the symbol string here (e.g. BTC/USDT)
                         cb_chat = cb.get("message", {}).get("chat", {}).get("id")
-                        telegram.send(f"🔍 <b>{symbol}</b> tahlil qilinmoqda...", chat_id=cb_chat)
-                        msg = await analyze_on_demand(symbol, chat_id=cb_chat)
-                        if msg:
-                            telegram.send(msg, chat_id=cb_chat)
+                        telegram.send(f"📡 <b>{symbol}</b> ma'lumotlar yuklanmoqda...", chat_id=cb_chat)
+                        try:
+                            btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+                            snap = btc_snap if symbol == "BTC/USDT" else snapshot(symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+                            telegram.send(f"🤖 <b>{symbol}</b> Claude tahlil qilmoqda...", chat_id=cb_chat)
+                            hint = screener.find_candidate(snap) or "A"
+                            journal.bump_claude_calls()
+                            sig = await analyze(snap, hint, btc_snap, journal.setup_performance(30))
+                            ctx_str = market_context(btc_snap)
+                            if sig.get("signal") == "long":
+                                ok, why = risk.validate(sig, last_price(symbol))
+                                if ok:
+                                    sig_id = journal.add_signal(sig)
+                                    kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
+                                    telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb, chat_id=cb_chat)
+                                    send_chart(symbol, snap, sig, chat_id=cb_chat)
+                                else:
+                                    send_chart(symbol, snap, None, chat_id=cb_chat)
+                                    telegram.send(f"📊 <b>{symbol}</b> — signal berilmadi\nSabab: {why}\n🌐 {ctx_str}", chat_id=cb_chat)
+                            else:
+                                send_chart(symbol, snap, None, chat_id=cb_chat)
+                                telegram.send(f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n💡 {sig.get('reason', '')}\nIshonch: {sig.get('score', 0)}/10\n🌐 {ctx_str}", chat_id=cb_chat)
+                        except Exception:
+                            telegram.send(f"❌ <b>{symbol}</b> tahlilida xato.", chat_id=cb_chat)
+                            print(f"[coin-cb] error {symbol}:\n{traceback.format_exc()}")
                     continue
                 msg = u.get("message", {})
                 text = msg.get("text", "")
