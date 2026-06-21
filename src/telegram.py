@@ -90,9 +90,9 @@ def main_keyboard() -> dict:
     """Persistent tap-to-send command buttons shown above the input field."""
     return {
         "keyboard": [
-            ["🪙 /coins", "📊 /analyze BTC"],
-            ["💼 /balance", "📈 /stats"],
-            ["📂 /open", "❓ /help"],
+            ["🪙 /coins", "🔄 /refresh"],
+            ["📈 /stats", "📂 /open"],
+            ["💼 /balance"],
         ],
         "resize_keyboard": True,
         "is_persistent": True,

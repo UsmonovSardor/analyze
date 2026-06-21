@@ -216,7 +216,10 @@ async def handle_command(text: str, chat_id=None):
     cmd = tokens[idx].lower().lstrip("/").split("@")[0]
     arg = tokens[idx + 1] if len(tokens) > idx + 1 else None
 
-    if cmd in ("coins", "valyutalar", "c"):
+    if cmd in ("refresh", "yangilash", "r"):
+        telegram.send("🔄 Bozor skanerlanmoqda...", reply_markup=telegram.main_keyboard(), chat_id=chat_id)
+        await scan_once()
+    elif cmd in ("coins", "valyutalar", "c"):
         telegram.send("🪙 <b>Valyutani tanlang</b> — tahlil uchun bosing:",
                       reply_markup=telegram.coins_keyboard(), chat_id=chat_id)
     elif cmd in ("analyze", "analiz", "a"):
