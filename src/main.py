@@ -235,9 +235,11 @@ async def handle_command(text: str, chat_id=None):
     elif cmd in ("balance", "balans", "portfel"):
         telegram.send(
             "💼 <b>Binance portfel</b>\n\n"
-            "⚠️ Hozircha bot signals-only rejimida ishlayapti.\n"
-            "Binance serverdan bloklangan — balansni ko'rish uchun "
-            "binance.bh ilovasini to'g'ridan-to'g'ri oching.",
+            "⚠️ Server Binance.bh ga kira olmaydi (WAF bloki).\n"
+            "Balansni ko'rish uchun quyidagi tugmani bosing 👇",
+            reply_markup={"inline_keyboard": [[
+                {"text": "🔗 Binance.bh ni ochish", "url": "https://www.binance.bh/en/my/dashboard"}
+            ]]},
             chat_id=chat_id
         )
     elif cmd in ("stats", "stat"):
