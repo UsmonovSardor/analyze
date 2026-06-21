@@ -42,6 +42,7 @@ TRADING_MODE = os.getenv("TRADING_MODE", "semi")
 RISK_PER_TRADE = float(os.getenv("RISK_PER_TRADE", "0.01"))   # 1% of quote balance
 MAX_TRADE_QUOTE = float(os.getenv("MAX_TRADE_QUOTE", "100"))  # hard cap per position (USDT)
 DAILY_LOSS_STOP_R = float(os.getenv("DAILY_LOSS_STOP_R", "-3"))  # halt trading for the day at -3R
+BINANCE_HOSTNAME = os.getenv("BINANCE_HOSTNAME", "api.binance.com")
 
 def trading_enabled() -> bool:
     return bool(BINANCE_API_KEY and BINANCE_API_SECRET) and TRADING_MODE in ("semi", "auto")

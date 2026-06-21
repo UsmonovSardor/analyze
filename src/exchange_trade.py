@@ -25,6 +25,7 @@ def client():
             "secret": config.BINANCE_API_SECRET,
             "enableRateLimit": True,
             "options": {"defaultType": "spot", "adjustForTimeDifference": True},
+            "hostname": config.BINANCE_HOSTNAME,
         })
     return _client
 

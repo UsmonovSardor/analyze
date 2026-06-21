@@ -216,7 +216,10 @@ async def handle_command(text: str, chat_id=None):
     cmd = tokens[idx].lower().lstrip("/").split("@")[0]
     arg = tokens[idx + 1] if len(tokens) > idx + 1 else None
 
-    if cmd in ("analyze", "analiz", "a"):
+    if cmd in ("coins", "valyutalar", "c"):
+        telegram.send("🪙 <b>Valyutani tanlang</b> — tahlil uchun bosing:",
+                      reply_markup=telegram.coins_keyboard(), chat_id=chat_id)
+    elif cmd in ("analyze", "analiz", "a"):
         if not arg:
             telegram.send("Foydalanish: <code>/analyze BTC</code>",
                           reply_markup=telegram.main_keyboard(), chat_id=chat_id)
@@ -269,6 +272,13 @@ async def telegram_poller():
                             f"👁️ Signal #{sid} kuzatish rejimiga olindi.\n"
                             f"Order ochilmadi — lekin TP1/TP2/TP3/SL natijalari yuborilaveradi."
                         )
+                    elif action == "coin":
+                        symbol = sid  # sid holds the symbol string here (e.g. BTC/USDT)
+                        cb_chat = cb.get("message", {}).get("chat", {}).get("id")
+                        telegram.send(f"🔍 <b>{symbol}</b> tahlil qilinmoqda...", chat_id=cb_chat)
+                        msg = await analyze_on_demand(symbol, chat_id=cb_chat)
+                        if msg:
+                            telegram.send(msg, chat_id=cb_chat)
                     continue
                 msg = u.get("message", {})
                 text = msg.get("text", "")

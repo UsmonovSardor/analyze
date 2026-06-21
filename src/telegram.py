@@ -90,13 +90,28 @@ def main_keyboard() -> dict:
     """Persistent tap-to-send command buttons shown above the input field."""
     return {
         "keyboard": [
-            ["📊 /analyze BTC", "💼 /balance"],
-            ["📈 /stats", "📂 /open"],
-            ["❓ /help"],
+            ["🪙 /coins", "📊 /analyze BTC"],
+            ["💼 /balance", "📈 /stats"],
+            ["📂 /open", "❓ /help"],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
     }
+
+
+def coins_keyboard() -> dict:
+    """Inline keyboard with all watchlist symbols — tap to analyze on demand."""
+    from . import config
+    buttons, row = [], []
+    for sym in config.SYMBOLS:
+        base = sym.split("/")[0]
+        row.append({"text": base, "callback_data": f"coin:{sym}"})
+        if len(row) == 5:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    return {"inline_keyboard": buttons}
 
 
 def execute_keyboard(sig_id: int) -> dict:
@@ -206,6 +221,7 @@ def format_help() -> str:
         "• Avto va qo'lda savdo (Binance)\n"
         "• Signal natijasini avtomatik kuzatish\n\n"
         "🔘 <b>Buyruqlar:</b>\n"
+        "🪙 <code>/coins</code> — barcha valyutalar ro'yxati (bosing → tahlil)\n"
         "📊 <code>/analyze BTC</code> — juftlikni tahlil qilish\n"
         "💼 <code>/balance</code> — Binance portfel\n"
         "📈 <code>/stats</code> — haftalik statistika\n"
