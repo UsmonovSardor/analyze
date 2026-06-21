@@ -309,7 +309,15 @@ async def telegram_poller():
                             telegram.send(f"🤖 <b>{symbol}</b> Claude tahlil qilmoqda...", chat_id=cb_chat)
                             hint = screener.find_candidate(snap) or "A"
                             journal.bump_claude_calls()
-                            sig = await analyze(snap, hint, btc_snap, journal.setup_performance(30))
+                            sig = None
+                            for _attempt in range(3):
+                                try:
+                                    sig = await analyze(snap, hint, btc_snap, journal.setup_performance(30))
+                                    break
+                                except Exception as _e:
+                                    if _attempt == 2:
+                                        raise
+                                    await asyncio.sleep(2)
                             ctx_str = market_context(btc_snap)
                             if sig.get("signal") == "long":
                                 ok, why = risk.validate(sig, last_price(symbol))
@@ -325,7 +333,7 @@ async def telegram_poller():
                                 send_chart(symbol, snap, None, chat_id=cb_chat)
                                 telegram.send(f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n💡 {sig.get('reason', '')}\nIshonch: {sig.get('score', 0)}/10\n🌐 {ctx_str}", chat_id=cb_chat)
                         except Exception:
-                            telegram.send(f"❌ <b>{symbol}</b> tahlilida xato.", chat_id=cb_chat)
+                            telegram.send(f"❌ <b>{symbol}</b> tahlilida xato — qayta urinib ko'ring.", chat_id=cb_chat)
                             print(f"[coin-cb] error {symbol}:\n{traceback.format_exc()}")
                     continue
                 msg = u.get("message", {})
