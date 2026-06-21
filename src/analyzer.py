@@ -37,16 +37,17 @@ def _performance_note(perf: dict) -> str:
             "setups, demand higher confluence there ===\n" + "\n".join(rows) + "\n")
 
 
-def build_prompt(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> str:
+def build_prompt(snap, setup_hint: str, btc_snap, perf: dict | None = None, short: bool = False) -> str:
+    e1h, e4h, ebtc = (30, 20, 15) if short else (60, 50, 30)
     return f"""Analyze this candidate setup. Screener hint: Setup {setup_hint} (verify it yourself, the hint may be wrong).
 {_performance_note(perf or {})}
 SYMBOL: {snap['symbol']}
 
 === 1h candles with indicators (newest last) ===
-{df_for_prompt(snap['entry_tf'], 60)}
+{df_for_prompt(snap['entry_tf'], e1h)}
 
 === 4h candles with indicators (newest last) ===
-{df_for_prompt(snap['context_tf'], 50)}
+{df_for_prompt(snap['context_tf'], e4h)}
 
 1h resistance levels: {snap['resistance_1h']}
 1h support levels: {snap['support_1h']}
@@ -54,9 +55,18 @@ SYMBOL: {snap['symbol']}
 4h support levels: {snap['support_4h']}
 
 === BTC 4h context (newest last) ===
-{df_for_prompt(btc_snap['context_tf'], 30)}
+{df_for_prompt(btc_snap['context_tf'], ebtc)}
 
 Follow the skill process exactly. Output ONLY the JSON object."""
+
+
+async def _run_query(prompt: str, options) -> str:
+    text = ""
+    async for message in query(prompt=prompt, options=options):
+        for block in getattr(message, "content", []) or []:
+            if hasattr(block, "text"):
+                text += block.text
+    return text
 
 
 async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> dict:
@@ -66,16 +76,19 @@ async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> 
         max_turns=1,
         allowed_tools=[],
     )
-    text = ""
-    async for message in query(prompt=build_prompt(snap, setup_hint, btc_snap, perf), options=options):
-        for block in getattr(message, "content", []) or []:
-            if hasattr(block, "text"):
-                text += block.text
-
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end == -1:
-        return {"signal": "none", "symbol": snap["symbol"], "reason": f"unparseable model output: {text[:200]}", "score": 0}
-    try:
-        return json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return {"signal": "none", "symbol": snap["symbol"], "reason": "invalid JSON from model", "score": 0}
+    symbol = snap["symbol"]
+    # Try full prompt first, fall back to shorter prompt on error
+    for short in (False, True):
+        try:
+            text = await _run_query(build_prompt(snap, setup_hint, btc_snap, perf, short=short), options)
+            start, end = text.find("{"), text.rfind("}")
+            if start == -1 or end == -1:
+                return {"signal": "none", "symbol": symbol, "reason": f"unparseable output: {text[:200]}", "score": 0}
+            return json.loads(text[start: end + 1])
+        except json.JSONDecodeError:
+            return {"signal": "none", "symbol": symbol, "reason": "invalid JSON from model", "score": 0}
+        except Exception as e:
+            if "success" in str(e).lower() and not short:
+                continue  # retry with shorter prompt
+            raise
+    return {"signal": "none", "symbol": symbol, "reason": "Claude error after retry", "score": 0}
