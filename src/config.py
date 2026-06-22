@@ -51,3 +51,75 @@ def trading_enabled() -> bool:
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "..", "journal.db"))
 
 SKILL_DIR = os.path.join(os.path.dirname(__file__), "..", "skill")
+
+# ── TradingView integration ─────────────────────────────────────────────────
+
+# Use tradingview-ta as the screener instead of ccxt-based indicators.
+# Set to "true" in .env to enable.
+USE_TV_SCREENER = os.getenv("USE_TV_SCREENER", "false").lower() == "true"
+
+# Webhook server for TradingView Pine Script alerts (Pro+ plan required).
+WEBHOOK_ENABLED = os.getenv("WEBHOOK_ENABLED", "false").lower() == "true"
+WEBHOOK_PORT    = int(os.getenv("WEBHOOK_PORT", "8080"))
+WEBHOOK_SECRET  = os.getenv("WEBHOOK_SECRET", "")  # set to a random string in .env
+
+# TradingView watchlist — replaces SYMBOLS when USE_TV_SCREENER=true.
+# Format: {"symbol": "TV_SYMBOL", "exchange": "EXCHANGE", "screener": "SCREENER"}
+# Screeners: "crypto" | "america" (US stocks) | "forex" | "cfd" (indices/commodities)
+TV_SYMBOLS = [
+    # ── Crypto (Binance) ──────────────────────────────────────────────────
+    {"symbol": "BTCUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "ETHUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "SOLUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "BNBUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "XRPUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "DOGEUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "ADAUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "LINKUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "AVAXUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "DOTUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "NEARUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "SUIUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "APTUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "INJUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "ARBUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "OPUSDT",   "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "AAVEUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "FETUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "RNDRUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "HBARUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "ATOMUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "UNIUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "LTCUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "TRXUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "ICPUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "STXUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "RUNEUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "SEIUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "TIAUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "GALAUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "SANDUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "ALGOUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "FILUSDT",  "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "MATICUSDT","exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "TONUSDT",  "exchange": "BYBIT",   "screener": "crypto"},
+
+    # ── US Stocks (uncomment to enable) ───────────────────────────────────
+    # {"symbol": "AAPL",  "exchange": "NASDAQ", "screener": "america"},
+    # {"symbol": "NVDA",  "exchange": "NASDAQ", "screener": "america"},
+    # {"symbol": "TSLA",  "exchange": "NASDAQ", "screener": "america"},
+    # {"symbol": "MSFT",  "exchange": "NASDAQ", "screener": "america"},
+    # {"symbol": "AMZN",  "exchange": "NASDAQ", "screener": "america"},
+    # {"symbol": "META",  "exchange": "NASDAQ", "screener": "america"},
+    # {"symbol": "GOOGL", "exchange": "NASDAQ", "screener": "america"},
+
+    # ── Forex (uncomment to enable) ───────────────────────────────────────
+    # {"symbol": "EURUSD", "exchange": "FX", "screener": "forex"},
+    # {"symbol": "GBPUSD", "exchange": "FX", "screener": "forex"},
+    # {"symbol": "USDJPY", "exchange": "FX", "screener": "forex"},
+
+    # ── Indices / Commodities (uncomment to enable) ───────────────────────
+    # {"symbol": "US30",  "exchange": "FOREXCOM", "screener": "cfd"},
+    # {"symbol": "SPX500","exchange": "FOREXCOM", "screener": "cfd"},
+    # {"symbol": "XAUUSD","exchange": "FOREXCOM", "screener": "cfd"},
+]

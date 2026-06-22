@@ -1,0 +1,80 @@
+// TradingView Pine Script — Webhook Alert Template
+// ================================================
+// Bu script botingizga TradingView alertlarini yuboradi.
+// TradingView Pro+ kerak (webhook uchun).
+//
+// Qo'llash:
+//  1. TradingView'da yangi indikator yarating
+//  2. Quyidagi kodni joylashtiring
+//  3. Alert qo'shing → "Webhook URL" → http://YOUR_HETZNER_IP:8080/webhook/tv
+//  4. Alert xabari sifatida quyidagi JSON ni kiriting (har bir pair uchun):
+//
+// Alert xabari (JSON):
+// {
+//   "secret":   "your-webhook-secret",
+//   "symbol":   "{{ticker}}",
+//   "exchange": "{{exchange}}",
+//   "screener": "crypto",
+//   "setup":    "TV",
+//   "action":   "long"
+// }
+//
+// {{ticker}} va {{exchange}} TradingView tomonidan avtomatik to'ldiriladi.
+
+//@version=5
+indicator("Bot Webhook Signals", overlay=true)
+
+// ── Sozlamalar ───────────────────────────────────────────────────────────────
+ema50  = ta.ema(close, 50)
+ema200 = ta.ema(close, 200)
+rsi    = ta.rsi(close, 14)
+atr    = ta.atr(14)
+[macd_line, signal_line, _] = ta.macd(close, 12, 26, 9)
+
+// 4H uptrend — faqat shu timeframeda ishlaydi
+// (TradingView'da grafik 1H da bo'lishi kerak, 4H context manual tekshiriladi)
+uptrend = close > ema200 and ema50 > ema200
+
+// ── Setup A: EMA50 pullback ───────────────────────────────────────────────
+near_ema50 = math.abs(close - ema50) <= 1.2 * atr
+rsi_reset  = rsi < 55 and rsi > rsi[1] and ta.lowest(rsi, 6) < 45
+setup_a    = uptrend and near_ema50 and rsi_reset
+
+// ── Setup B: Breakout ─────────────────────────────────────────────────────
+vol_avg   = ta.sma(volume, 20)
+vol_spike = volume >= 1.3 * vol_avg
+range_high = ta.highest(high[2], 40)
+breakout   = close > range_high and (close - range_high) <= 1.5 * atr
+setup_b    = uptrend and breakout and vol_spike
+
+// ── Setup TV: MACD + EMA alignment ───────────────────────────────────────
+macd_cross = ta.crossover(macd_line, signal_line)
+setup_tv   = uptrend and macd_cross and rsi < 65
+
+// ── Chart belgilari ───────────────────────────────────────────────────────
+plotshape(setup_a, title="Setup A", style=shape.triangleup,
+          location=location.belowbar, color=color.green, size=size.small)
+plotshape(setup_b, title="Setup B", style=shape.triangleup,
+          location=location.belowbar, color=color.blue,  size=size.small)
+plotshape(setup_tv, title="Setup TV", style=shape.triangleup,
+          location=location.belowbar, color=color.orange, size=size.small)
+
+plot(ema50,  "EMA 50",  color=color.yellow, linewidth=1)
+plot(ema200, "EMA 200", color=color.red,    linewidth=2)
+
+// ── Alertlar ──────────────────────────────────────────────────────────────
+// Har bir setup uchun alohida alert yarating:
+
+alertcondition(setup_a,  title="Setup A — EMA Pullback",  message="Setup A signal")
+alertcondition(setup_b,  title="Setup B — Breakout",      message="Setup B signal")
+alertcondition(setup_tv, title="Setup TV — MACD Cross",   message="Setup TV signal")
+
+// Alert xabarini TradingView alert sozlamalarida qo'lda kiriting:
+// {
+//   "secret": "YOUR_SECRET",
+//   "symbol": "{{ticker}}",
+//   "exchange": "{{exchange}}",
+//   "screener": "crypto",
+//   "setup": "A",
+//   "action": "long"
+// }

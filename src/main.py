@@ -1,5 +1,7 @@
 """Main loop: screener scan -> Claude analysis -> risk gate -> Telegram (+ optional trade).
-Plus: open-signal outcome tracking, weekly stats, and a Telegram button poller."""
+Plus: open-signal outcome tracking, weekly stats, and a Telegram button poller.
+Optional: TradingView screener (USE_TV_SCREENER=true) and webhook server (WEBHOOK_ENABLED=true).
+"""
 import asyncio
 import time
 import traceback
@@ -8,6 +10,15 @@ from . import chart, config, journal, risk, screener, telegram
 from .analyzer import analyze
 from .data import _exchange as _px
 from .data import snapshot
+
+# ── TradingView optional imports ─────────────────────────────────────────────
+if config.USE_TV_SCREENER:
+    from .screener_tv import find_candidate_tv, btc_context_ok_tv, tv_symbol_to_ccxt
+
+if config.WEBHOOK_ENABLED:
+    from .webhook_server import run_webhook_server, init_queue as _init_webhook_queue
+
+_webhook_queue: asyncio.Queue = asyncio.Queue()
 
 
 def send_chart(symbol: str, snap: dict, sig: dict | None = None, chat_id=None):
@@ -53,52 +64,82 @@ def market_context(btc_snap) -> str:
     return f"BTC {trend} (4h) · BTC RSI {rsi:.0f}"
 
 
+async def _process_candidate(symbol: str, snap: dict, hint: str,
+                             btc_snap: dict, perf: dict, ctx_str: str):
+    """Shared logic: run Claude → risk → Telegram for one candidate."""
+    if journal.signals_today() >= config.MAX_SIGNALS_PER_DAY:
+        print("[scan] daily signal cap reached")
+        return False
+    if len(journal.open_signals()) >= config.MAX_OPEN_SIGNALS:
+        print("[scan] max open signals reached")
+        return False
+    if journal.recent_signal_for(symbol, config.COOLDOWN_HOURS_PER_SYMBOL):
+        return False
+    if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
+        print("[scan] Claude daily call budget exhausted")
+        return False
+
+    print(f"[scan] candidate {symbol} setup {hint} -> Claude")
+    journal.bump_claude_calls()
+    sig = await analyze(snap, hint, btc_snap, perf)
+
+    ok, why = risk.validate(sig, last_price(symbol))
+    if not ok:
+        print(f"[risk] {symbol} rejected: {why}")
+        return False
+
+    sig_id = journal.add_signal(sig)
+    kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
+    telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)
+    send_chart(symbol, snap, sig)
+    if config.trading_enabled() and config.TRADING_MODE == "auto":
+        _try_execute(sig_id)
+    print(f"[signal] #{sig_id} {symbol} posted")
+    return True
+
+
 async def scan_once():
     btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-    if not screener.btc_context_ok(btc_snap):
-        print("[scan] BTC 4h downtrend — skipping cycle")
-        return
 
-    perf = journal.setup_performance(30)  # feedback loop: recent per-setup win-rate
+    # BTC context check (TV or ccxt based)
+    if config.USE_TV_SCREENER:
+        if not btc_context_ok_tv():
+            print("[scan] BTC 4h downtrend (TV) — skipping cycle")
+            return
+    else:
+        if not screener.btc_context_ok(btc_snap):
+            print("[scan] BTC 4h downtrend — skipping cycle")
+            return
+
+    perf    = journal.setup_performance(30)
     ctx_str = market_context(btc_snap)
 
+    # ── TradingView screener path ─────────────────────────────────────────
+    if config.USE_TV_SCREENER:
+        for tv_sym in config.TV_SYMBOLS:
+            ccxt_symbol = tv_symbol_to_ccxt(tv_sym)
+            if not ccxt_symbol:
+                continue  # non-crypto: webhook-only for now
+            try:
+                hint = find_candidate_tv(tv_sym)
+                if not hint:
+                    continue
+                snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
+                    ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+                await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
+            except Exception:
+                print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+        return
+
+    # ── Original ccxt screener path ───────────────────────────────────────
     for symbol in config.SYMBOLS:
         try:
-            if journal.signals_today() >= config.MAX_SIGNALS_PER_DAY:
-                print("[scan] daily signal cap reached")
-                return
-            if len(journal.open_signals()) >= config.MAX_OPEN_SIGNALS:
-                print("[scan] max open signals reached")
-                return
-            if journal.recent_signal_for(symbol, config.COOLDOWN_HOURS_PER_SYMBOL):
-                continue
-
             snap = btc_snap if symbol == "BTC/USDT" else snapshot(
                 symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
             hint = screener.find_candidate(snap)
             if not hint:
                 continue
-
-            if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
-                print("[scan] Claude daily call budget exhausted")
-                return
-
-            print(f"[scan] candidate {symbol} setup {hint} -> Claude")
-            journal.bump_claude_calls()
-            sig = await analyze(snap, hint, btc_snap, perf)
-
-            ok, why = risk.validate(sig, last_price(symbol))
-            if not ok:
-                print(f"[risk] {symbol} rejected: {why}")
-                continue
-
-            sig_id = journal.add_signal(sig)
-            kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
-            telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)
-            send_chart(symbol, snap, sig)
-            if config.trading_enabled() and config.TRADING_MODE == "auto":
-                _try_execute(sig_id)
-            print(f"[signal] #{sig_id} {symbol} posted")
+            await _process_candidate(symbol, snap, hint, btc_snap, perf, ctx_str)
         except Exception:
             print(f"[scan] error on {symbol}:\n{traceback.format_exc()}")
 
@@ -346,6 +387,42 @@ async def telegram_poller():
             await asyncio.sleep(5)
 
 
+async def webhook_processor():
+    """Process signals arriving from TradingView webhooks."""
+    print("[webhook] processor started")
+    while True:
+        try:
+            item = await _webhook_queue.get()
+            symbol   = item["symbol"]   # e.g. "BTCUSDT"
+            exchange = item["exchange"]
+            screener_name = item["screener"]
+            hint     = item.get("setup", "TV")
+
+            # Convert to ccxt format (crypto only for now)
+            tv_sym = {"symbol": symbol, "exchange": exchange, "screener": screener_name}
+            from .screener_tv import tv_symbol_to_ccxt
+            ccxt_symbol = tv_symbol_to_ccxt(tv_sym)
+            if not ccxt_symbol:
+                print(f"[webhook] {exchange}:{symbol} — non-crypto, skipping (stocks/forex coming soon)")
+                _webhook_queue.task_done()
+                continue
+
+            print(f"[webhook] processing {ccxt_symbol} setup={hint}")
+            btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+            snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
+                ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+            perf    = journal.setup_performance(30)
+            ctx_str = market_context(btc_snap)
+            await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
+        except Exception:
+            print(f"[webhook] processor error:\n{traceback.format_exc()}")
+        finally:
+            try:
+                _webhook_queue.task_done()
+            except Exception:
+                pass
+
+
 async def scan_loop():
     last_scan = last_outcome = 0.0
     last_weekly = time.time()
@@ -368,10 +445,20 @@ async def scan_loop():
 
 async def main():
     mode = config.TRADING_MODE if config.trading_enabled() else "off (signals only)"
-    print(f"[boot] trading-signal-bot starting · trading={mode}")
+    screener_mode = "TradingView" if config.USE_TV_SCREENER else "ccxt"
+    print(f"[boot] trading-signal-bot starting · trading={mode} · screener={screener_mode}")
+
     tasks = [scan_loop()]
+
     if config.TELEGRAM_BOT_TOKEN:
-        tasks.append(telegram_poller())  # commands (/analyze, /stats) + execute buttons
+        tasks.append(telegram_poller())
+
+    if config.WEBHOOK_ENABLED:
+        _init_webhook_queue(_webhook_queue)
+        tasks.append(run_webhook_server(port=config.WEBHOOK_PORT))
+        tasks.append(webhook_processor())
+        print(f"[boot] webhook server enabled on port {config.WEBHOOK_PORT}")
+
     await asyncio.gather(*tasks)
 
 

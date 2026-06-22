@@ -8,3 +8,5 @@ services:
       PYTHONUNBUFFERED: "1"
     volumes:
       - ./data:/data
+    ports:
+      - "8080:8080"   # TradingView webhook receiver (enable WEBHOOK_ENABLED=true in .env)
