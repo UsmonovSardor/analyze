@@ -116,7 +116,7 @@ Follow the skill process exactly. Output ONLY the JSON object."""
             print(f"[analyze_tv] {symbol} JSON error: {e}")
             return {"signal": "none", "symbol": symbol, "reason": "invalid JSON", "score": 0}
         except Exception:
-            print(f"[analyze_tv] {symbol} attempt {attempt+1} error:\n{_tb.format_exc()[:400]}")
+            print(f"[analyze_tv] {symbol} attempt {attempt+1} error:\n{_tb.format_exc()[:1200]}")
             if attempt == 0:
                 continue
             return {"signal": "none", "symbol": symbol, "reason": "Claude API error", "score": 0}
