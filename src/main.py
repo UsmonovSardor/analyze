@@ -358,6 +358,43 @@ async def handle_command(text: str, chat_id=None):
         telegram.send(telegram.format_weekly(journal.weekly_stats()), chat_id=chat_id)
     elif cmd in ("open", "ochiq"):
         telegram.send(telegram.format_open(journal.open_signals()), chat_id=chat_id)
+    elif cmd in ("testsignal", "test"):
+        sym = (arg or "EURUSD").upper()
+        from .screener_tv import get_tv_analysis
+        from .analyzer import analyze_tv_direct
+        tv_map = {s["symbol"]: s for s in config.TV_SYMBOLS}
+        tv_info = tv_map.get(sym)
+        if not tv_info:
+            telegram.send(f"❌ {sym} TV_SYMBOLS da topilmadi. Misol: /testsignal EURUSD", chat_id=chat_id)
+            return
+        telegram.send(f"🧪 <b>TEST MODE</b> — {sym} majburan tahlil qilinmoqda (screener o'tkazib yuborildi)...", chat_id=chat_id)
+        try:
+            e1h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "1h")
+            e4h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "4h")
+        except Exception as exc:
+            telegram.send(f"❌ TradingView xato: {exc}", chat_id=chat_id)
+            return
+        sig = await analyze_tv_direct(sym, e1h, e4h, "TV")
+        sig["symbol"] = sym
+        cur_price = float(e1h.indicators.get("close", 0))
+        signal_type = sig.get("signal", "none")
+        score = sig.get("score", 0)
+        reason = sig.get("reason", "")
+        if signal_type == "long":
+            from . import risk
+            ok, why = risk.validate(sig, cur_price)
+            if ok:
+                sig_id = journal.add_signal(sig)
+                telegram.send(telegram.format_signal(sig, sig_id, f"TEST • {sym}"), chat_id=chat_id)
+                telegram.send(f"✅ Signal yaratildi #{sig_id}", chat_id=chat_id)
+            else:
+                telegram.send(
+                    f"📊 <b>TEST {sym}</b> — Gemini LONG dedi lekin risk gate o'tmadi\n"
+                    f"Sabab: {why}\nScore: {score}/10\n💡 {reason}", chat_id=chat_id)
+        else:
+            telegram.send(
+                f"📊 <b>TEST {sym}</b> — Gemini signal bermadi\n"
+                f"Signal: {signal_type} | Score: {score}/10\n💡 {reason}", chat_id=chat_id)
     elif cmd in ("help", "start", "yordam", "menu"):
         telegram.send(telegram.format_help(), reply_markup=telegram.main_keyboard(), chat_id=chat_id)
 
