@@ -21,13 +21,13 @@ _TF_MAP = {
     "15m": Interval.INTERVAL_15_MINUTES,
 }
 
-_TV_REQUEST_DELAY = 2.0  # seconds between TradingView API calls (avoid 429)
-_TV_MAX_RETRIES = 3
+_TV_REQUEST_DELAY = 3.0   # seconds between normal TradingView API calls
+_TV_429_BACKOFF = [15, 45]  # seconds to wait on 429: first retry=15s, second=45s
 
 
 def get_tv_analysis(symbol: str, exchange: str, screener: str, timeframe: str = "1h"):
-    for attempt in range(_TV_MAX_RETRIES):
-        time.sleep(_TV_REQUEST_DELAY * (attempt + 1))  # 2s, 4s, 6s backoff
+    time.sleep(_TV_REQUEST_DELAY)
+    for attempt in range(len(_TV_429_BACKOFF) + 1):
         try:
             handler = TA_Handler(
                 symbol=symbol,
@@ -38,8 +38,10 @@ def get_tv_analysis(symbol: str, exchange: str, screener: str, timeframe: str = 
             return handler.get_analysis()
         except Exception as exc:
             msg = str(exc)
-            if "429" in msg and attempt < _TV_MAX_RETRIES - 1:
-                print(f"[screener_tv] {symbol} 429 rate limit, retry {attempt+1}/{_TV_MAX_RETRIES-1} ...")
+            if "429" in msg and attempt < len(_TV_429_BACKOFF):
+                wait = _TV_429_BACKOFF[attempt]
+                print(f"[screener_tv] {symbol} 429 rate limit — waiting {wait}s (retry {attempt+1}/{len(_TV_429_BACKOFF)}) ...")
+                time.sleep(wait)
                 continue
             raise
 
