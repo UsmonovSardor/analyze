@@ -100,9 +100,11 @@ def main_keyboard() -> dict:
 
 
 def coins_keyboard() -> dict:
-    """Inline keyboard with all watchlist symbols — tap to analyze on demand."""
+    """Inline keyboard with crypto, forex, stocks — tap to analyze on demand."""
     from . import config
     buttons, row = [], []
+
+    buttons.append([{"text": "🪙 ── CRYPTO ── 🪙", "callback_data": "noop"}])
     for sym in config.SYMBOLS:
         base = sym.split("/")[0]
         row.append({"text": base, "callback_data": f"coin:{sym}"})
@@ -111,6 +113,27 @@ def coins_keyboard() -> dict:
             row = []
     if row:
         buttons.append(row)
+
+    buttons.append([{"text": "💱 ── FOREX / GOLD / OIL ── 💱", "callback_data": "noop"}])
+    row = []
+    for sym in config.FOREX_SYMBOLS:
+        row.append({"text": sym["symbol"], "callback_data": f"tv:{sym['symbol']}"})
+        if len(row) == 5:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append([{"text": "📈 ── US STOCKS ── 📈", "callback_data": "noop"}])
+    row = []
+    for sym in config.STOCK_SYMBOLS:
+        row.append({"text": sym["symbol"], "callback_data": f"tv:{sym['symbol']}"})
+        if len(row) == 5:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
     return {"inline_keyboard": buttons}
 
 

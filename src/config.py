@@ -21,7 +21,7 @@ OUTCOME_CHECK_SEC = 10 * 60       # open-signal TP/SL checker cadence
 # Risk engine gates (deterministic, independent of the model)
 MIN_SCORE = 7
 MIN_RR_TP2 = 2.0                  # entry->TP2 must be >= 2R
-MAX_SIGNALS_PER_DAY = 5
+MAX_SIGNALS_PER_DAY = 15
 MAX_OPEN_SIGNALS = 4
 COOLDOWN_HOURS_PER_SYMBOL = 12    # no repeat signal on same symbol within this window
 
@@ -56,7 +56,7 @@ SKILL_DIR = os.path.join(os.path.dirname(__file__), "..", "skill")
 
 # Use tradingview-ta as the screener instead of ccxt-based indicators.
 # Set to "true" in .env to enable.
-USE_TV_SCREENER = os.getenv("USE_TV_SCREENER", "false").lower() == "true"
+USE_TV_SCREENER = os.getenv("USE_TV_SCREENER", "true").lower() == "true"
 
 # Webhook server for TradingView Pine Script alerts (Pro+ plan required).
 WEBHOOK_ENABLED = os.getenv("WEBHOOK_ENABLED", "false").lower() == "true"
@@ -104,22 +104,40 @@ TV_SYMBOLS = [
     {"symbol": "MATICUSDT","exchange": "BINANCE", "screener": "crypto"},
     {"symbol": "TONUSDT",  "exchange": "BYBIT",   "screener": "crypto"},
 
-    # ── US Stocks (uncomment to enable) ───────────────────────────────────
-    # {"symbol": "AAPL",  "exchange": "NASDAQ", "screener": "america"},
-    # {"symbol": "NVDA",  "exchange": "NASDAQ", "screener": "america"},
-    # {"symbol": "TSLA",  "exchange": "NASDAQ", "screener": "america"},
-    # {"symbol": "MSFT",  "exchange": "NASDAQ", "screener": "america"},
-    # {"symbol": "AMZN",  "exchange": "NASDAQ", "screener": "america"},
-    # {"symbol": "META",  "exchange": "NASDAQ", "screener": "america"},
-    # {"symbol": "GOOGL", "exchange": "NASDAQ", "screener": "america"},
+    # ── US Stocks ─────────────────────────────────────────────────────────
+    {"symbol": "AAPL",  "exchange": "NASDAQ", "screener": "america"},
+    {"symbol": "NVDA",  "exchange": "NASDAQ", "screener": "america"},
+    {"symbol": "TSLA",  "exchange": "NASDAQ", "screener": "america"},
+    {"symbol": "MSFT",  "exchange": "NASDAQ", "screener": "america"},
+    {"symbol": "AMZN",  "exchange": "NASDAQ", "screener": "america"},
+    {"symbol": "META",  "exchange": "NASDAQ", "screener": "america"},
 
-    # ── Forex (uncomment to enable) ───────────────────────────────────────
-    # {"symbol": "EURUSD", "exchange": "FX", "screener": "forex"},
-    # {"symbol": "GBPUSD", "exchange": "FX", "screener": "forex"},
-    # {"symbol": "USDJPY", "exchange": "FX", "screener": "forex"},
+    # ── Forex ─────────────────────────────────────────────────────────────
+    {"symbol": "EURUSD", "exchange": "FX_IDC", "screener": "forex"},
+    {"symbol": "GBPUSD", "exchange": "FX_IDC", "screener": "forex"},
+    {"symbol": "USDJPY", "exchange": "FX_IDC", "screener": "forex"},
+    {"symbol": "AUDUSD", "exchange": "FX_IDC", "screener": "forex"},
 
-    # ── Indices / Commodities (uncomment to enable) ───────────────────────
-    # {"symbol": "US30",  "exchange": "FOREXCOM", "screener": "cfd"},
-    # {"symbol": "SPX500","exchange": "FOREXCOM", "screener": "cfd"},
-    # {"symbol": "XAUUSD","exchange": "FOREXCOM", "screener": "cfd"},
+    # ── Indices / Commodities ─────────────────────────────────────────────
+    {"symbol": "XAUUSD", "exchange": "FOREXCOM", "screener": "cfd"},
+    {"symbol": "US30",   "exchange": "FOREXCOM", "screener": "cfd"},
+    {"symbol": "SPX500", "exchange": "FOREXCOM", "screener": "cfd"},
+    {"symbol": "USOIL",  "exchange": "FOREXCOM", "screener": "cfd"},
+]
+
+# ── Forex/Stocks for /coins keyboard ───────────────────────────────────────
+FOREX_SYMBOLS = [
+    {"symbol": "EURUSD", "exchange": "FX_IDC",   "screener": "forex"},
+    {"symbol": "GBPUSD", "exchange": "FX_IDC",   "screener": "forex"},
+    {"symbol": "USDJPY", "exchange": "FX_IDC",   "screener": "forex"},
+    {"symbol": "XAUUSD", "exchange": "FOREXCOM", "screener": "cfd"},
+    {"symbol": "USOIL",  "exchange": "FOREXCOM", "screener": "cfd"},
+]
+
+STOCK_SYMBOLS = [
+    {"symbol": "AAPL",  "exchange": "NASDAQ", "screener": "america"},
+    {"symbol": "NVDA",  "exchange": "NASDAQ", "screener": "america"},
+    {"symbol": "TSLA",  "exchange": "NASDAQ", "screener": "america"},
+    {"symbol": "MSFT",  "exchange": "NASDAQ", "screener": "america"},
+    {"symbol": "AMZN",  "exchange": "NASDAQ", "screener": "america"},
 ]

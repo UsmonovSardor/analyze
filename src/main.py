@@ -98,40 +98,90 @@ async def _process_candidate(symbol: str, snap: dict, hint: str,
     return True
 
 
+def _find_tv_info(symbol: str) -> dict | None:
+    """Find TV config dict for forex/stocks by symbol name."""
+    for s in config.FOREX_SYMBOLS + config.STOCK_SYMBOLS:
+        if s["symbol"].upper() == symbol.upper():
+            return s
+    return None
+
+
+async def _process_tv_noncrpyto(tv_sym: dict, perf: dict, ctx_label: str) -> bool:
+    """Run Claude analysis for forex/stocks/indices using tradingview-ta data."""
+    from .screener_tv import get_tv_analysis
+    from .analyzer import analyze_tv_direct
+
+    symbol = tv_sym["symbol"]
+    if journal.signals_today() >= config.MAX_SIGNALS_PER_DAY:
+        return False
+    if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
+        return False
+    if journal.recent_signal_for(symbol, config.COOLDOWN_HOURS_PER_SYMBOL):
+        return False
+
+    e1h = get_tv_analysis(symbol, tv_sym["exchange"], tv_sym["screener"], "1h")
+    e4h = get_tv_analysis(symbol, tv_sym["exchange"], tv_sym["screener"], "4h")
+    current_price = float(e1h.indicators.get("close", 0))
+    if not current_price:
+        return False
+
+    print(f"[scan-tv] {symbol} -> Claude (non-crypto)")
+    journal.bump_claude_calls()
+    sig = await analyze_tv_direct(symbol, e1h, e4h, "TV", perf)
+    sig["symbol"] = symbol
+
+    ok, why = risk.validate(sig, current_price)
+    if not ok:
+        print(f"[risk] {symbol} rejected: {why}")
+        return False
+
+    sig_id = journal.add_signal(sig)
+    telegram.send(telegram.format_signal(sig, sig_id, ctx_label))
+    print(f"[signal] #{sig_id} {symbol} posted")
+    return True
+
+
 async def scan_once():
     btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-
-    # BTC context check (TV or ccxt based)
-    if config.USE_TV_SCREENER:
-        if not btc_context_ok_tv():
-            print("[scan] BTC 4h downtrend (TV) — skipping cycle")
-            return
-    else:
-        if not screener.btc_context_ok(btc_snap):
-            print("[scan] BTC 4h downtrend — skipping cycle")
-            return
-
     perf    = journal.setup_performance(30)
     ctx_str = market_context(btc_snap)
+
+    btc_ok = btc_context_ok_tv() if config.USE_TV_SCREENER else screener.btc_context_ok(btc_snap)
+    if not btc_ok:
+        print("[scan] BTC 4h downtrend — skipping crypto, scanning non-crypto only")
 
     # ── TradingView screener path ─────────────────────────────────────────
     if config.USE_TV_SCREENER:
         for tv_sym in config.TV_SYMBOLS:
             ccxt_symbol = tv_symbol_to_ccxt(tv_sym)
-            if not ccxt_symbol:
-                continue  # non-crypto: webhook-only for now
-            try:
-                hint = find_candidate_tv(tv_sym)
-                if not hint:
+            if ccxt_symbol:
+                # Crypto: skip if BTC downtrend
+                if not btc_ok:
                     continue
-                snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
-                    ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-                await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
-            except Exception:
-                print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+                try:
+                    hint = find_candidate_tv(tv_sym)
+                    if not hint:
+                        continue
+                    snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
+                        ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+                    await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
+                except Exception:
+                    print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+            else:
+                # Non-crypto (forex/stocks/indices): no BTC context needed
+                try:
+                    hint = find_candidate_tv(tv_sym)
+                    if not hint:
+                        continue
+                    await _process_tv_noncrpyto(tv_sym, perf, f"{tv_sym['symbol']} • {tv_sym['screener'].upper()}")
+                except Exception:
+                    print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
         return
 
     # ── Original ccxt screener path ───────────────────────────────────────
+    if not btc_ok:
+        print("[scan] BTC 4h downtrend — skipping cycle")
+        return
     for symbol in config.SYMBOLS:
         try:
             snap = btc_snap if symbol == "BTC/USDT" else snapshot(
@@ -324,6 +374,8 @@ async def telegram_poller():
                 if cb:
                     action, _, sid = cb.get("data", "").partition(":")
                     telegram.answer_callback(cb["id"])
+                    if action == "noop":
+                        continue
                     if action == "auto":
                         if config.trading_enabled():
                             telegram.send(f"🤖 Avto savdo bajarilmoqda #{sid}...")
@@ -340,39 +392,56 @@ async def telegram_poller():
                             f"👁️ Signal #{sid} kuzatish rejimiga olindi.\n"
                             f"Order ochilmadi — lekin TP1/TP2/TP3/SL natijalari yuborilaveradi."
                         )
-                    elif action == "coin":
-                        symbol = sid  # sid holds the symbol string here (e.g. BTC/USDT)
+                    elif action in ("coin", "tv"):
+                        symbol = sid
                         cb_chat = cb.get("message", {}).get("chat", {}).get("id")
-                        telegram.send(f"📡 <b>{symbol}</b> ma'lumotlar yuklanmoqda...", chat_id=cb_chat)
+                        telegram.send(f"🔍 <b>{symbol}</b> tahlil qilinmoqda...", chat_id=cb_chat)
                         try:
-                            btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-                            snap = btc_snap if symbol == "BTC/USDT" else snapshot(symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-                            telegram.send(f"🤖 <b>{symbol}</b> Claude tahlil qilmoqda...", chat_id=cb_chat)
-                            hint = screener.find_candidate(snap) or "A"
-                            journal.bump_claude_calls()
-                            sig = None
-                            for _attempt in range(3):
-                                try:
-                                    sig = await analyze(snap, hint, btc_snap, journal.setup_performance(30))
-                                    break
-                                except Exception as _e:
-                                    if _attempt == 2:
-                                        raise
-                                    await asyncio.sleep(2)
-                            ctx_str = market_context(btc_snap)
-                            if sig.get("signal") == "long":
-                                ok, why = risk.validate(sig, last_price(symbol))
-                                if ok:
-                                    sig_id = journal.add_signal(sig)
-                                    kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
-                                    telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb, chat_id=cb_chat)
-                                    send_chart(symbol, snap, sig, chat_id=cb_chat)
+                            if action == "coin" and "/" in symbol:
+                                # Crypto via ccxt
+                                btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+                                snap = btc_snap if symbol == "BTC/USDT" else snapshot(symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+                                hint = screener.find_candidate(snap) or "A"
+                                journal.bump_claude_calls()
+                                sig = await analyze(snap, hint, btc_snap, journal.setup_performance(30))
+                                ctx_str = market_context(btc_snap)
+                                cur_price = last_price(symbol)
+                                if sig.get("signal") == "long":
+                                    ok, why = risk.validate(sig, cur_price)
+                                    if ok:
+                                        sig_id = journal.add_signal(sig)
+                                        kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
+                                        telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb, chat_id=cb_chat)
+                                        send_chart(symbol, snap, sig, chat_id=cb_chat)
+                                    else:
+                                        send_chart(symbol, snap, None, chat_id=cb_chat)
+                                        telegram.send(f"📊 <b>{symbol}</b> — signal berilmadi\nSabab: {why}\n🌐 {ctx_str}", chat_id=cb_chat)
                                 else:
                                     send_chart(symbol, snap, None, chat_id=cb_chat)
-                                    telegram.send(f"📊 <b>{symbol}</b> — signal berilmadi\nSabab: {why}\n🌐 {ctx_str}", chat_id=cb_chat)
+                                    telegram.send(f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n💡 {sig.get('reason', '')}\nIshonch: {sig.get('score', 0)}/10\n🌐 {ctx_str}", chat_id=cb_chat)
                             else:
-                                send_chart(symbol, snap, None, chat_id=cb_chat)
-                                telegram.send(f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n💡 {sig.get('reason', '')}\nIshonch: {sig.get('score', 0)}/10\n🌐 {ctx_str}", chat_id=cb_chat)
+                                # Forex/Stocks via tradingview-ta
+                                tv_info = _find_tv_info(symbol)
+                                if not tv_info:
+                                    telegram.send(f"❌ {symbol} — ma'lumot topilmadi", chat_id=cb_chat)
+                                    continue
+                                from .screener_tv import get_tv_analysis
+                                from .analyzer import analyze_tv_direct
+                                e1h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "1h")
+                                e4h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "4h")
+                                cur_price = float(e1h.indicators.get("close", 0))
+                                journal.bump_claude_calls()
+                                sig = await analyze_tv_direct(symbol, e1h, e4h, "TV", journal.setup_performance(30))
+                                sig["symbol"] = symbol
+                                if sig.get("signal") == "long":
+                                    ok, why = risk.validate(sig, cur_price)
+                                    if ok:
+                                        sig_id = journal.add_signal(sig)
+                                        telegram.send(telegram.format_signal(sig, sig_id, f"{symbol} • {tv_info['screener'].upper()}"), chat_id=cb_chat)
+                                    else:
+                                        telegram.send(f"📊 <b>{symbol}</b> — signal berilmadi\nSabab: {why}", chat_id=cb_chat)
+                                else:
+                                    telegram.send(f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n💡 {sig.get('reason', '')}\nIshonch: {sig.get('score', 0)}/10", chat_id=cb_chat)
                         except Exception:
                             telegram.send(f"❌ <b>{symbol}</b> tahlilida xato — qayta urinib ko'ring.", chat_id=cb_chat)
                             print(f"[coin-cb] error {symbol}:\n{traceback.format_exc()}")
@@ -393,27 +462,55 @@ async def webhook_processor():
     while True:
         try:
             item = await _webhook_queue.get()
-            symbol   = item["symbol"]   # e.g. "BTCUSDT"
-            exchange = item["exchange"]
+            symbol        = item["symbol"]
+            exchange      = item["exchange"]
             screener_name = item["screener"]
-            hint     = item.get("setup", "TV")
+            hint          = item.get("setup", "TV")
 
-            # Convert to ccxt format (crypto only for now)
             tv_sym = {"symbol": symbol, "exchange": exchange, "screener": screener_name}
-            from .screener_tv import tv_symbol_to_ccxt
             ccxt_symbol = tv_symbol_to_ccxt(tv_sym)
-            if not ccxt_symbol:
-                print(f"[webhook] {exchange}:{symbol} — non-crypto, skipping (stocks/forex coming soon)")
-                _webhook_queue.task_done()
-                continue
 
-            print(f"[webhook] processing {ccxt_symbol} setup={hint}")
-            btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-            snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
-                ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-            perf    = journal.setup_performance(30)
-            ctx_str = market_context(btc_snap)
-            await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
+            if ccxt_symbol:
+                # Crypto path
+                print(f"[webhook] processing {ccxt_symbol} setup={hint}")
+                btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+                snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
+                    ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+                perf    = journal.setup_performance(30)
+                ctx_str = market_context(btc_snap)
+                await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
+            else:
+                # Forex/stocks/indices path
+                print(f"[webhook] non-crypto signal: {exchange}:{symbol} setup={hint}")
+                from .screener_tv import get_tv_analysis
+                from .analyzer import analyze_tv_direct
+                try:
+                    e1h = get_tv_analysis(symbol, exchange, screener_name, "1h")
+                    e4h = get_tv_analysis(symbol, exchange, screener_name, "4h")
+                    current_price = float(e1h.indicators.get("close", 0))
+                    if not current_price:
+                        print(f"[webhook] {symbol} — no price data")
+                        continue
+                    perf = journal.setup_performance(30)
+                    if journal.signals_today() >= config.MAX_SIGNALS_PER_DAY:
+                        continue
+                    if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
+                        continue
+                    if journal.recent_signal_for(symbol, config.COOLDOWN_HOURS_PER_SYMBOL):
+                        continue
+                    journal.bump_claude_calls()
+                    sig = await analyze_tv_direct(symbol, e1h, e4h, hint, perf)
+                    sig["symbol"] = symbol
+                    ok, why = risk.validate(sig, current_price)
+                    if not ok:
+                        print(f"[webhook] {symbol} rejected: {why}")
+                        continue
+                    sig_id = journal.add_signal(sig)
+                    ctx_label = f"{symbol} • {screener_name.upper()} • TradingView"
+                    telegram.send(telegram.format_signal(sig, sig_id, ctx_label))
+                    print(f"[webhook] #{sig_id} {symbol} signal posted")
+                except Exception:
+                    print(f"[webhook] {symbol} error:\n{traceback.format_exc()}")
         except Exception:
             print(f"[webhook] processor error:\n{traceback.format_exc()}")
         finally:

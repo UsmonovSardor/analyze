@@ -69,6 +69,56 @@ async def _run_query(prompt: str, options) -> str:
     return text
 
 
+async def analyze_tv_direct(symbol: str, e1h, e4h, setup_hint: str, perf: dict | None = None) -> dict:
+    """Analyze any instrument (forex, stocks, indices) using tradingview-ta indicator snapshot."""
+    def fmt_ta(a) -> str:
+        i = a.indicators
+        s = a.summary
+        return (
+            f"Close={i.get('close','?')}  Open={i.get('open','?')}  High={i.get('high','?')}  Low={i.get('low','?')}\n"
+            f"EMA20={i.get('EMA20','?')}  EMA50={i.get('EMA50','?')}  EMA200={i.get('EMA200','?')}\n"
+            f"RSI={i.get('RSI','?')}  Stoch.K={i.get('Stoch.K','?')}  Stoch.D={i.get('Stoch.D','?')}\n"
+            f"MACD={i.get('MACD.macd','?')}  Signal={i.get('MACD.signal','?')}  Hist={i.get('MACD.hist','?')}\n"
+            f"BB_upper={i.get('BB.upper','?')}  BB_mid={i.get('BB.basis','?')}  BB_lower={i.get('BB.lower','?')}\n"
+            f"ATR={i.get('ATR','?')}  Volume={i.get('volume','?')}\n"
+            f"TV Rec: {s.get('RECOMMENDATION','?')} (BUY={s.get('BUY',0)} SELL={s.get('SELL',0)})"
+        )
+
+    prompt = f"""Analyze this trading setup. Screener hint: Setup {setup_hint} (verify yourself).
+{_performance_note(perf or {})}
+SYMBOL: {symbol}
+
+=== 1H TradingView indicators (current snapshot) ===
+{fmt_ta(e1h)}
+
+=== 4H TradingView indicators (current snapshot) ===
+{fmt_ta(e4h)}
+
+This may be forex, commodity, or stock — apply universal price-action principles.
+Follow the skill process exactly. Output ONLY the JSON object."""
+
+    options = ClaudeAgentOptions(
+        system_prompt=_skill(),
+        model=config.CLAUDE_MODEL,
+        max_turns=1,
+        allowed_tools=[],
+    )
+    for short in (False, True):
+        try:
+            text = await _run_query(prompt, options)
+            start, end = text.find("{"), text.rfind("}")
+            if start == -1 or end == -1:
+                return {"signal": "none", "symbol": symbol, "reason": f"unparseable: {text[:200]}", "score": 0}
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            return {"signal": "none", "symbol": symbol, "reason": "invalid JSON", "score": 0}
+        except Exception:
+            if not short:
+                continue
+            return {"signal": "none", "symbol": symbol, "reason": "Claude error", "score": 0}
+    return {"signal": "none", "symbol": symbol, "reason": "analyze_tv_direct failed", "score": 0}
+
+
 async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> dict:
     options = ClaudeAgentOptions(
         system_prompt=_skill(),
