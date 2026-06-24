@@ -21,18 +21,27 @@ _TF_MAP = {
     "15m": Interval.INTERVAL_15_MINUTES,
 }
 
-_TV_REQUEST_DELAY = 0.6  # seconds between TradingView API calls (avoid 429)
+_TV_REQUEST_DELAY = 2.0  # seconds between TradingView API calls (avoid 429)
+_TV_MAX_RETRIES = 3
 
 
 def get_tv_analysis(symbol: str, exchange: str, screener: str, timeframe: str = "1h"):
-    time.sleep(_TV_REQUEST_DELAY)
-    handler = TA_Handler(
-        symbol=symbol,
-        screener=screener,
-        exchange=exchange,
-        interval=_TF_MAP.get(timeframe, Interval.INTERVAL_1_HOUR),
-    )
-    return handler.get_analysis()
+    for attempt in range(_TV_MAX_RETRIES):
+        time.sleep(_TV_REQUEST_DELAY * (attempt + 1))  # 2s, 4s, 6s backoff
+        try:
+            handler = TA_Handler(
+                symbol=symbol,
+                screener=screener,
+                exchange=exchange,
+                interval=_TF_MAP.get(timeframe, Interval.INTERVAL_1_HOUR),
+            )
+            return handler.get_analysis()
+        except Exception as exc:
+            msg = str(exc)
+            if "429" in msg and attempt < _TV_MAX_RETRIES - 1:
+                print(f"[screener_tv] {symbol} 429 rate limit, retry {attempt+1}/{_TV_MAX_RETRIES-1} ...")
+                continue
+            raise
 
 
 def find_candidate_tv(tv_sym: dict) -> str | None:
