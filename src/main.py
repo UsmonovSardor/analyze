@@ -160,10 +160,11 @@ async def scan_once(notify_chat_id=None):
         forex_syms   = [s for s in noncrypto if s["screener"] == "forex"]
         stock_syms   = [s for s in noncrypto if s["screener"] == "america"]
 
+        crypto_line = f"✅ Crypto: {len(crypto_syms)} ta" if btc_ok else "⏭ Crypto: o’tkazildi (BTC pastda)"
         _notify(
             f"🔍 <b>Skanerlash boshlandi</b>\n"
             f"BTC: {btc_status}\n"
-            f"{'✅ Crypto: ' + str(len(crypto_syms)) + ' ta' if btc_ok else '⏭ Crypto: o'tkazildi (BTC pastda)'}\n"
+            f"{crypto_line}\n"
             f"✅ Forex/Oltin: {len(forex_syms)} ta\n"
             f"✅ US Aksiyalar: {len(stock_syms)} ta\n"
             f"<i>Iltimos kuting (~3-5 daqiqa)...</i>"
