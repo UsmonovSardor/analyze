@@ -21,29 +21,19 @@ _TF_MAP = {
     "15m": Interval.INTERVAL_15_MINUTES,
 }
 
-_TV_REQUEST_DELAY = 3.0   # seconds between normal TradingView API calls
-_TV_429_BACKOFF = [15, 45]  # seconds to wait on 429: first retry=15s, second=45s
+_TV_REQUEST_DELAY = 3.0   # seconds between TradingView API calls (avoid 429)
 
 
 def get_tv_analysis(symbol: str, exchange: str, screener: str, timeframe: str = "1h"):
+    """Fetch TradingView analysis. Returns None on 429 (caller should skip symbol)."""
     time.sleep(_TV_REQUEST_DELAY)
-    for attempt in range(len(_TV_429_BACKOFF) + 1):
-        try:
-            handler = TA_Handler(
-                symbol=symbol,
-                screener=screener,
-                exchange=exchange,
-                interval=_TF_MAP.get(timeframe, Interval.INTERVAL_1_HOUR),
-            )
-            return handler.get_analysis()
-        except Exception as exc:
-            msg = str(exc)
-            if "429" in msg and attempt < len(_TV_429_BACKOFF):
-                wait = _TV_429_BACKOFF[attempt]
-                print(f"[screener_tv] {symbol} 429 rate limit — waiting {wait}s (retry {attempt+1}/{len(_TV_429_BACKOFF)}) ...")
-                time.sleep(wait)
-                continue
-            raise
+    handler = TA_Handler(
+        symbol=symbol,
+        screener=screener,
+        exchange=exchange,
+        interval=_TF_MAP.get(timeframe, Interval.INTERVAL_1_HOUR),
+    )
+    return handler.get_analysis()
 
 
 def find_candidate_tv(tv_sym: dict) -> str | None:
@@ -61,6 +51,10 @@ def find_candidate_tv(tv_sym: dict) -> str | None:
         e   = get_tv_analysis(tv_sym["symbol"], tv_sym["exchange"], tv_sym["screener"], "1h")
         ctx = get_tv_analysis(tv_sym["symbol"], tv_sym["exchange"], tv_sym["screener"], "4h")
     except Exception as _exc:
+        msg = str(_exc)
+        if "429" in msg:
+            # Rate limited — skip silently, next scan cycle will retry
+            return None
         print(f"[screener_tv] {tv_sym['symbol']} fetch error: {type(_exc).__name__}: {_exc}")
         return None
 
@@ -112,8 +106,10 @@ def btc_context_ok_tv() -> bool:
         ema200 = a.indicators.get("EMA200", 0)
         ema50  = a.indicators.get("EMA50",  0)
         return not (close < ema200 and ema50 < ema200)
-    except Exception:
-        return True
+    except Exception as exc:
+        if "429" not in str(exc):
+            print(f"[screener_tv] BTC context error: {exc}")
+        return True  # fallback: allow scanning
 
 
 def tv_symbol_to_ccxt(tv_sym: dict) -> str | None:
