@@ -141,21 +141,40 @@ async def _process_tv_noncrpyto(tv_sym: dict, perf: dict, ctx_label: str) -> boo
     return True
 
 
-async def scan_once():
+async def scan_once(notify_chat_id=None):
+    def _notify(msg: str):
+        if notify_chat_id:
+            telegram.send(msg, chat_id=notify_chat_id)
+
     btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
     perf    = journal.setup_performance(30)
     ctx_str = market_context(btc_snap)
 
     btc_ok = btc_context_ok_tv() if config.USE_TV_SCREENER else screener.btc_context_ok(btc_snap)
-    if not btc_ok:
-        print("[scan] BTC 4h downtrend — skipping crypto, scanning non-crypto only")
+    btc_status = "📈 ko'tarilish" if btc_ok else "📉 pasayish (crypto o'tkaziladi)"
 
     # ── TradingView screener path ─────────────────────────────────────────
     if config.USE_TV_SCREENER:
+        crypto_syms  = [s for s in config.TV_SYMBOLS if tv_symbol_to_ccxt(s)]
+        noncrypto    = [s for s in config.TV_SYMBOLS if not tv_symbol_to_ccxt(s)]
+        forex_syms   = [s for s in noncrypto if s["screener"] == "forex"]
+        stock_syms   = [s for s in noncrypto if s["screener"] == "america"]
+
+        _notify(
+            f"🔍 <b>Skanerlash boshlandi</b>\n"
+            f"BTC: {btc_status}\n"
+            f"{'✅ Crypto: ' + str(len(crypto_syms)) + ' ta' if btc_ok else '⏭ Crypto: o'tkazildi (BTC pastda)'}\n"
+            f"✅ Forex/Oltin: {len(forex_syms)} ta\n"
+            f"✅ US Aksiyalar: {len(stock_syms)} ta\n"
+            f"<i>Iltimos kuting (~3-5 daqiqa)...</i>"
+        )
+
+        signals_found = 0
+        skipped_429   = 0
+
         for tv_sym in config.TV_SYMBOLS:
             ccxt_symbol = tv_symbol_to_ccxt(tv_sym)
             if ccxt_symbol:
-                # Crypto: skip if BTC downtrend
                 if not btc_ok:
                     continue
                 try:
@@ -164,24 +183,43 @@ async def scan_once():
                         continue
                     snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
                         ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-                    await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
-                except Exception:
-                    print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+                    sent = await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
+                    if sent:
+                        signals_found += 1
+                except Exception as exc:
+                    if "429" in str(exc):
+                        skipped_429 += 1
+                    else:
+                        print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
             else:
-                # Non-crypto (forex/stocks/indices): no BTC context needed
                 try:
                     hint = find_candidate_tv(tv_sym)
                     if not hint:
                         continue
-                    await _process_tv_noncrpyto(tv_sym, perf, f"{tv_sym['symbol']} • {tv_sym['screener'].upper()}")
-                except Exception:
-                    print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+                    sent = await _process_tv_noncrpyto(tv_sym, perf, f"{tv_sym['symbol']} • {tv_sym['screener'].upper()}")
+                    if sent:
+                        signals_found += 1
+                except Exception as exc:
+                    if "429" in str(exc):
+                        skipped_429 += 1
+                    else:
+                        print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+
+        summary = f"✅ <b>Skanerlash tugadi</b>\n"
+        if signals_found:
+            summary += f"🎯 <b>{signals_found} ta signal topildi!</b>\n"
+        else:
+            summary += f"📊 Hozir kuchli setup topilmadi\n"
+        if skipped_429:
+            summary += f"⚠️ {skipped_429} ta symbol TradingView cheklovida o'tkazildi (20-30 daqiqada o'z-o'zidan ochiladi)"
+        _notify(summary)
         return
 
     # ── Original ccxt screener path ───────────────────────────────────────
     if not btc_ok:
-        print("[scan] BTC 4h downtrend — skipping cycle")
+        _notify("📉 <b>BTC pasayish trendida</b> — hozir kuchli signal sharoiti yo'q.")
         return
+    signals_found = 0
     for symbol in config.SYMBOLS:
         try:
             snap = btc_snap if symbol == "BTC/USDT" else snapshot(
@@ -189,9 +227,13 @@ async def scan_once():
             hint = screener.find_candidate(snap)
             if not hint:
                 continue
-            await _process_candidate(symbol, snap, hint, btc_snap, perf, ctx_str)
+            sent = await _process_candidate(symbol, snap, hint, btc_snap, perf, ctx_str)
+            if sent:
+                signals_found += 1
         except Exception:
             print(f"[scan] error on {symbol}:\n{traceback.format_exc()}")
+    if not signals_found:
+        _notify("📊 <b>Skanerlash tugadi</b> — hozir kuchli setup topilmadi.")
 
 
 def _try_execute(sig_id: int):
@@ -308,8 +350,7 @@ async def handle_command(text: str, chat_id=None):
     arg = tokens[idx + 1] if len(tokens) > idx + 1 else None
 
     if cmd in ("refresh", "yangilash", "r"):
-        telegram.send("🔄 <b>Bozor skanerlanmoqda...</b>\nForex, aksiyalar va crypto tekshiriladi.", chat_id=chat_id)
-        await scan_once()
+        await scan_once(notify_chat_id=chat_id)
     elif cmd in ("coins", "valyutalar", "c"):
         telegram.send("🪙 <b>Valyutani tanlang</b> — tahlil uchun bosing:",
                       reply_markup=telegram.coins_keyboard(), chat_id=chat_id)
