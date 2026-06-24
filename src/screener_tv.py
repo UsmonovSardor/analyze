@@ -45,8 +45,8 @@ def find_candidate_tv(tv_sym: dict) -> str | None:
     try:
         e   = get_tv_analysis(tv_sym["symbol"], tv_sym["exchange"], tv_sym["screener"], "1h")
         ctx = get_tv_analysis(tv_sym["symbol"], tv_sym["exchange"], tv_sym["screener"], "4h")
-    except Exception:
-        print(f"[screener_tv] {tv_sym['symbol']} fetch error: {traceback.format_exc()[:200]}")
+    except Exception as _exc:
+        print(f"[screener_tv] {tv_sym['symbol']} fetch error: {type(_exc).__name__}: {_exc}")
         return None
 
     ei = e.indicators
