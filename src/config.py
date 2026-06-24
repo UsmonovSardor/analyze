@@ -25,8 +25,8 @@ MAX_SIGNALS_PER_DAY = 15
 MAX_OPEN_SIGNALS = 4
 COOLDOWN_HOURS_PER_SYMBOL = 12    # no repeat signal on same symbol within this window
 
-# Claude
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+# Gemini
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 MAX_CLAUDE_CALLS_PER_DAY = int(os.getenv("MAX_CLAUDE_CALLS_PER_DAY", "40"))
 
 # Telegram

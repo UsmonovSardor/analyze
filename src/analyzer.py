@@ -1,9 +1,8 @@
-"""Claude analysis layer. Works with either CLAUDE_CODE_OAUTH_TOKEN (subscription
-token from `claude setup-token`) or ANTHROPIC_API_KEY — the Agent SDK handles both."""
+"""Gemini analysis layer — uses google-generativeai (free tier)."""
 import json
 import os
 
-from claude_agent_sdk import ClaudeAgentOptions, query
+import google.generativeai as genai
 
 from . import config
 from .data import df_for_prompt
@@ -25,6 +24,14 @@ def _skill() -> str:
     if _SKILL is None:
         _SKILL = _load_skill()
     return _SKILL
+
+
+def _gemini():
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
+    return genai.GenerativeModel(
+        model_name=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+        system_instruction=_skill(),
+    )
 
 
 def _performance_note(perf: dict) -> str:
@@ -60,17 +67,20 @@ SYMBOL: {snap['symbol']}
 Follow the skill process exactly. Output ONLY the JSON object."""
 
 
-async def _run_query(prompt: str, options) -> str:
-    text = ""
-    async for message in query(prompt=prompt, options=options):
-        for block in getattr(message, "content", []) or []:
-            if hasattr(block, "text"):
-                text += block.text
-    return text
+def _parse_json(text: str, symbol: str) -> dict:
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1:
+        print(f"[analyzer] {symbol} unparseable output: {text[:300]}")
+        return {"signal": "none", "symbol": symbol, "reason": f"unparseable: {text[:200]}", "score": 0}
+    try:
+        return json.loads(text[start:end + 1])
+    except json.JSONDecodeError as e:
+        print(f"[analyzer] {symbol} JSON error: {e} | text: {text[start:end+1][:300]}")
+        return {"signal": "none", "symbol": symbol, "reason": "invalid JSON", "score": 0}
 
 
 async def analyze_tv_direct(symbol: str, e1h, e4h, setup_hint: str, perf: dict | None = None) -> dict:
-    """Analyze any instrument (forex, stocks, indices) using tradingview-ta indicator snapshot."""
+    """Analyze any instrument (forex, stocks, indices) using TradingView indicator snapshot."""
     def fmt_ta(a) -> str:
         i = a.indicators
         s = a.summary
@@ -97,52 +107,39 @@ SYMBOL: {symbol}
 This may be forex, commodity, or stock — apply universal price-action principles.
 Follow the skill process exactly. Output ONLY the JSON object."""
 
-    options = ClaudeAgentOptions(
-        system_prompt=_skill(),
-        model=config.CLAUDE_MODEL,
-        max_turns=1,
-        allowed_tools=[],
-    )
     import traceback as _tb
     for attempt in range(2):
         try:
-            text = await _run_query(prompt, options)
-            start, end = text.find("{"), text.rfind("}")
-            if start == -1 or end == -1:
-                print(f"[analyze_tv] {symbol} unparseable output: {text[:300]}")
-                return {"signal": "none", "symbol": symbol, "reason": f"unparseable: {text[:200]}", "score": 0}
-            return json.loads(text[start:end + 1])
-        except json.JSONDecodeError as e:
-            print(f"[analyze_tv] {symbol} JSON error: {e}")
-            return {"signal": "none", "symbol": symbol, "reason": "invalid JSON", "score": 0}
+            model = _gemini()
+            resp = model.generate_content(prompt)
+            text = resp.text
+            result = _parse_json(text, symbol)
+            if result.get("signal") != "none":
+                print(f"[analyzer] {symbol} → signal={result.get('signal')} score={result.get('score')}")
+            return result
         except Exception:
-            print(f"[analyze_tv] {symbol} attempt {attempt+1} error:\n{_tb.format_exc()[:1200]}")
+            print(f"[analyzer] {symbol} attempt {attempt+1} error:\n{_tb.format_exc()[:1200]}")
             if attempt == 0:
                 continue
-            return {"signal": "none", "symbol": symbol, "reason": "Claude API error", "score": 0}
+            return {"signal": "none", "symbol": symbol, "reason": "Gemini API error", "score": 0}
     return {"signal": "none", "symbol": symbol, "reason": "analyze_tv_direct failed", "score": 0}
 
 
 async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> dict:
-    options = ClaudeAgentOptions(
-        system_prompt=_skill(),
-        model=config.CLAUDE_MODEL,
-        max_turns=1,
-        allowed_tools=[],
-    )
     symbol = snap["symbol"]
-    # Try full prompt first, fall back to shorter prompt on error
     for short in (False, True):
         try:
-            text = await _run_query(build_prompt(snap, setup_hint, btc_snap, perf, short=short), options)
-            start, end = text.find("{"), text.rfind("}")
-            if start == -1 or end == -1:
-                return {"signal": "none", "symbol": symbol, "reason": f"unparseable output: {text[:200]}", "score": 0}
-            return json.loads(text[start: end + 1])
+            model = _gemini()
+            resp = model.generate_content(build_prompt(snap, setup_hint, btc_snap, perf, short=short))
+            text = resp.text
+            result = _parse_json(text, symbol)
+            if result.get("signal") != "none":
+                print(f"[analyzer] {symbol} → signal={result.get('signal')} score={result.get('score')}")
+            return result
         except json.JSONDecodeError:
             return {"signal": "none", "symbol": symbol, "reason": "invalid JSON from model", "score": 0}
         except Exception as e:
-            if "success" in str(e).lower() and not short:
-                continue  # retry with shorter prompt
+            if not short:
+                continue
             raise
-    return {"signal": "none", "symbol": symbol, "reason": "Claude error after retry", "score": 0}
+    return {"signal": "none", "symbol": symbol, "reason": "Gemini error after retry", "score": 0}
