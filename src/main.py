@@ -427,8 +427,15 @@ async def telegram_poller():
                                     continue
                                 from .screener_tv import get_tv_analysis
                                 from .analyzer import analyze_tv_direct
-                                e1h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "1h")
-                                e4h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "4h")
+                                try:
+                                    e1h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "1h")
+                                    e4h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "4h")
+                                except Exception as _tv_exc:
+                                    if "429" in str(_tv_exc):
+                                        telegram.send(f"⏳ <b>{symbol}</b> — TradingView so'rovlar cheklandi, 1-2 daqiqadan keyin qayta bosing.", chat_id=cb_chat)
+                                    else:
+                                        telegram.send(f"❌ <b>{symbol}</b> ma'lumot olishda xato: {str(_tv_exc)[:100]}", chat_id=cb_chat)
+                                    continue
                                 cur_price = float(e1h.indicators.get("close", 0))
                                 journal.bump_claude_calls()
                                 sig = await analyze_tv_direct(symbol, e1h, e4h, "TV", journal.setup_performance(30))
