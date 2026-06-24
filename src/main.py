@@ -308,28 +308,7 @@ async def handle_command(text: str, chat_id=None):
     arg = tokens[idx + 1] if len(tokens) > idx + 1 else None
 
     if cmd in ("refresh", "yangilash", "r"):
-        btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-        if not screener.btc_context_ok(btc_snap):
-            telegram.send(
-                "📉 <b>BTC hozir pasayish trendida</b> (4h EMA200 pastida)\n"
-                "Signal uchun qulay sharoit yo'q — keyinroq urinib ko'ring.",
-                chat_id=chat_id
-            )
-            return
-        # Find candidates quickly (no Claude yet)
-        candidates = []
-        for sym in config.SYMBOLS:
-            try:
-                snap = btc_snap if sym == "BTC/USDT" else snapshot(sym, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-                hint = screener.find_candidate(snap)
-                if hint:
-                    candidates.append((sym, snap, hint))
-            except Exception:
-                pass
-        if not candidates:
-            telegram.send("🔍 Skanerlandi — hozir kuchli setup yo'q.\nKeyinroq avtomatik skaner signal beradi.", chat_id=chat_id)
-            return
-        telegram.send(f"✅ <b>{len(candidates)} ta kandidat topildi</b> — Claude tahlil qilmoqda...", chat_id=chat_id)
+        telegram.send("🔄 <b>Bozor skanerlanmoqda...</b>\nForex, aksiyalar va crypto tekshiriladi.", chat_id=chat_id)
         await scan_once()
     elif cmd in ("coins", "valyutalar", "c"):
         telegram.send("🪙 <b>Valyutani tanlang</b> — tahlil uchun bosing:",
