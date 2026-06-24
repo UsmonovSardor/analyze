@@ -106,6 +106,18 @@ def _find_tv_info(symbol: str) -> dict | None:
     return None
 
 
+async def _tv_analysis_async(symbol: str, exchange: str, screener: str, tf: str):
+    """Non-blocking wrapper for get_tv_analysis (time.sleep inside — runs in thread)."""
+    from .screener_tv import get_tv_analysis
+    return await asyncio.to_thread(get_tv_analysis, symbol, exchange, screener, tf)
+
+
+async def _find_candidate_tv_async(tv_sym: dict):
+    """Non-blocking wrapper for find_candidate_tv."""
+    from .screener_tv import find_candidate_tv
+    return await asyncio.to_thread(find_candidate_tv, tv_sym)
+
+
 async def _process_tv_noncrpyto(tv_sym: dict, perf: dict, ctx_label: str) -> bool:
     """Run Claude analysis for forex/stocks/indices using tradingview-ta data."""
     from .screener_tv import get_tv_analysis
@@ -119,8 +131,8 @@ async def _process_tv_noncrpyto(tv_sym: dict, perf: dict, ctx_label: str) -> boo
     if journal.recent_signal_for(symbol, config.COOLDOWN_HOURS_PER_SYMBOL):
         return False
 
-    e1h = get_tv_analysis(symbol, tv_sym["exchange"], tv_sym["screener"], "1h")
-    e4h = get_tv_analysis(symbol, tv_sym["exchange"], tv_sym["screener"], "4h")
+    e1h = await _tv_analysis_async(symbol, tv_sym["exchange"], tv_sym["screener"], "1h")
+    e4h = await _tv_analysis_async(symbol, tv_sym["exchange"], tv_sym["screener"], "4h")
     current_price = float(e1h.indicators.get("close", 0))
     if not current_price:
         return False
@@ -179,7 +191,7 @@ async def scan_once(notify_chat_id=None):
                 if not btc_ok:
                     continue
                 try:
-                    hint = find_candidate_tv(tv_sym)
+                    hint = await _find_candidate_tv_async(tv_sym)
                     if not hint:
                         continue
                     snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
@@ -194,7 +206,7 @@ async def scan_once(notify_chat_id=None):
                         print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
             else:
                 try:
-                    hint = find_candidate_tv(tv_sym)
+                    hint = await _find_candidate_tv_async(tv_sym)
                     if not hint:
                         continue
                     sent = await _process_tv_noncrpyto(tv_sym, perf, f"{tv_sym['symbol']} • {tv_sym['screener'].upper()}")
@@ -351,7 +363,7 @@ async def handle_command(text: str, chat_id=None):
     arg = tokens[idx + 1] if len(tokens) > idx + 1 else None
 
     if cmd in ("refresh", "yangilash", "r"):
-        await scan_once(notify_chat_id=chat_id)
+        asyncio.create_task(scan_once(notify_chat_id=chat_id))
     elif cmd in ("coins", "valyutalar", "c"):
         telegram.send("🪙 <b>Valyutani tanlang</b> — tahlil uchun bosing:",
                       reply_markup=telegram.coins_keyboard(), chat_id=chat_id)
@@ -390,8 +402,8 @@ async def handle_command(text: str, chat_id=None):
             return
         telegram.send(f"🧪 <b>TEST MODE</b> — {sym} majburan tahlil qilinmoqda (screener o'tkazib yuborildi)...", chat_id=chat_id)
         try:
-            e1h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "1h")
-            e4h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "4h")
+            e1h = await _tv_analysis_async(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "1h")
+            e4h = await _tv_analysis_async(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "4h")
         except Exception as exc:
             telegram.send(f"❌ TradingView xato: {exc}", chat_id=chat_id)
             return
@@ -486,8 +498,8 @@ async def telegram_poller():
                                 from .screener_tv import get_tv_analysis
                                 from .analyzer import analyze_tv_direct
                                 try:
-                                    e1h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "1h")
-                                    e4h = get_tv_analysis(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "4h")
+                                    e1h = await _tv_analysis_async(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "1h")
+                                    e4h = await _tv_analysis_async(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "4h")
                                 except Exception as _tv_exc:
                                     if "429" in str(_tv_exc):
                                         telegram.send(f"⏳ <b>{symbol}</b> — TradingView so'rovlar cheklandi, 1-2 daqiqadan keyin qayta bosing.", chat_id=cb_chat)
@@ -550,8 +562,8 @@ async def webhook_processor():
                 from .screener_tv import get_tv_analysis
                 from .analyzer import analyze_tv_direct
                 try:
-                    e1h = get_tv_analysis(symbol, exchange, screener_name, "1h")
-                    e4h = get_tv_analysis(symbol, exchange, screener_name, "4h")
+                    e1h = await _tv_analysis_async(symbol, exchange, screener_name, "1h")
+                    e4h = await _tv_analysis_async(symbol, exchange, screener_name, "4h")
                     current_price = float(e1h.indicators.get("close", 0))
                     if not current_price:
                         print(f"[webhook] {symbol} — no price data")
