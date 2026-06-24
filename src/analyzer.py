@@ -105,7 +105,7 @@ This may be forex, commodity, or stock — apply universal price-action principl
 Follow the skill process exactly. Output ONLY the JSON object."""
 
     import traceback as _tb
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     for attempt in range(2):
         try:
             client = _gemini_client()
@@ -129,7 +129,7 @@ Follow the skill process exactly. Output ONLY the JSON object."""
 
 async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> dict:
     symbol = snap["symbol"]
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     for short in (False, True):
         try:
             client = _gemini_client()
