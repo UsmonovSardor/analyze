@@ -2,7 +2,8 @@
 import json
 import os
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from . import config
 from .data import df_for_prompt
@@ -26,12 +27,8 @@ def _skill() -> str:
     return _SKILL
 
 
-def _gemini():
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
-    return genai.GenerativeModel(
-        model_name=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
-        system_instruction=_skill(),
-    )
+def _gemini_client():
+    return genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
 
 
 def _performance_note(perf: dict) -> str:
@@ -108,10 +105,15 @@ This may be forex, commodity, or stock — apply universal price-action principl
 Follow the skill process exactly. Output ONLY the JSON object."""
 
     import traceback as _tb
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
     for attempt in range(2):
         try:
-            model = _gemini()
-            resp = model.generate_content(prompt)
+            client = _gemini_client()
+            resp = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(system_instruction=_skill()),
+            )
             text = resp.text
             result = _parse_json(text, symbol)
             if result.get("signal") != "none":
@@ -127,10 +129,15 @@ Follow the skill process exactly. Output ONLY the JSON object."""
 
 async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> dict:
     symbol = snap["symbol"]
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
     for short in (False, True):
         try:
-            model = _gemini()
-            resp = model.generate_content(build_prompt(snap, setup_hint, btc_snap, perf, short=short))
+            client = _gemini_client()
+            resp = client.models.generate_content(
+                model=model_name,
+                contents=build_prompt(snap, setup_hint, btc_snap, perf, short=short),
+                config=types.GenerateContentConfig(system_instruction=_skill()),
+            )
             text = resp.text
             result = _parse_json(text, symbol)
             if result.get("signal") != "none":
