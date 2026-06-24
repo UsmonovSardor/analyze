@@ -11,6 +11,7 @@ Setup types returned:
 """
 
 from tradingview_ta import TA_Handler, Interval
+import time
 import traceback
 
 _TF_MAP = {
@@ -20,8 +21,11 @@ _TF_MAP = {
     "15m": Interval.INTERVAL_15_MINUTES,
 }
 
+_TV_REQUEST_DELAY = 0.6  # seconds between TradingView API calls (avoid 429)
+
 
 def get_tv_analysis(symbol: str, exchange: str, screener: str, timeframe: str = "1h"):
+    time.sleep(_TV_REQUEST_DELAY)
     handler = TA_Handler(
         symbol=symbol,
         screener=screener,
