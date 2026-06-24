@@ -1,4 +1,5 @@
 """Gemini analysis layer — uses google-generativeai (free tier)."""
+import asyncio
 import json
 import os
 
@@ -27,8 +28,38 @@ def _skill() -> str:
     return _SKILL
 
 
+_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]
+
+
 def _gemini_client():
     return genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
+
+
+def _gemini_generate(prompt: str, model_name: str | None = None) -> str:
+    """Call Gemini with automatic model fallback on 503."""
+    import time as _time
+    client = _gemini_client()
+    models = [model_name] if model_name else _GEMINI_MODELS
+    last_exc = None
+    for m in models:
+        for attempt in range(2):
+            try:
+                resp = client.models.generate_content(
+                    model=m,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(system_instruction=_skill()),
+                )
+                return resp.text
+            except Exception as exc:
+                msg = str(exc)
+                if "503" in msg or "UNAVAILABLE" in msg:
+                    wait = 5 * (attempt + 1)
+                    print(f"[gemini] {m} 503 — waiting {wait}s (attempt {attempt+1})")
+                    _time.sleep(wait)
+                    last_exc = exc
+                    continue
+                raise
+    raise last_exc
 
 
 def _performance_note(perf: dict) -> str:
@@ -105,48 +136,32 @@ This may be forex, commodity, or stock — apply universal price-action principl
 Follow the skill process exactly. Output ONLY the JSON object."""
 
     import traceback as _tb
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    for attempt in range(2):
-        try:
-            client = _gemini_client()
-            resp = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(system_instruction=_skill()),
-            )
-            text = resp.text
-            result = _parse_json(text, symbol)
-            if result.get("signal") != "none":
-                print(f"[analyzer] {symbol} → signal={result.get('signal')} score={result.get('score')}")
-            return result
-        except Exception:
-            print(f"[analyzer] {symbol} attempt {attempt+1} error:\n{_tb.format_exc()[:1200]}")
-            if attempt == 0:
-                continue
-            return {"signal": "none", "symbol": symbol, "reason": "Gemini API error", "score": 0}
-    return {"signal": "none", "symbol": symbol, "reason": "analyze_tv_direct failed", "score": 0}
+    try:
+        text = await asyncio.to_thread(_gemini_generate, prompt)
+        result = _parse_json(text, symbol)
+        if result.get("signal") != "none":
+            print(f"[analyzer] {symbol} → signal={result.get('signal')} score={result.get('score')}")
+        return result
+    except Exception:
+        print(f"[analyzer] {symbol} error:\n{_tb.format_exc()[:800]}")
+        return {"signal": "none", "symbol": symbol, "reason": "Gemini API error", "score": 0}
 
 
 async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> dict:
+    import traceback as _tb
     symbol = snap["symbol"]
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     for short in (False, True):
         try:
-            client = _gemini_client()
-            resp = client.models.generate_content(
-                model=model_name,
-                contents=build_prompt(snap, setup_hint, btc_snap, perf, short=short),
-                config=types.GenerateContentConfig(system_instruction=_skill()),
-            )
-            text = resp.text
+            text = await asyncio.to_thread(_gemini_generate, build_prompt(snap, setup_hint, btc_snap, perf, short=short))
             result = _parse_json(text, symbol)
             if result.get("signal") != "none":
                 print(f"[analyzer] {symbol} → signal={result.get('signal')} score={result.get('score')}")
             return result
         except json.JSONDecodeError:
             return {"signal": "none", "symbol": symbol, "reason": "invalid JSON from model", "score": 0}
-        except Exception as e:
+        except Exception:
             if not short:
                 continue
-            raise
+            print(f"[analyzer] {symbol} error:\n{_tb.format_exc()[:800]}")
+            return {"signal": "none", "symbol": symbol, "reason": "Gemini error", "score": 0}
     return {"signal": "none", "symbol": symbol, "reason": "Gemini error after retry", "score": 0}
