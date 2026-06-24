@@ -119,10 +119,8 @@ TV_SYMBOLS = [
     {"symbol": "AUDUSD", "exchange": "FX_IDC", "screener": "forex"},
 
     # ── Indices / Commodities ─────────────────────────────────────────────
-    {"symbol": "XAUUSD", "exchange": "FOREXCOM", "screener": "cfd"},
-    {"symbol": "US30",   "exchange": "FOREXCOM", "screener": "cfd"},
-    {"symbol": "SPX500", "exchange": "FOREXCOM", "screener": "cfd"},
-    {"symbol": "USOIL",  "exchange": "FOREXCOM", "screener": "cfd"},
+    {"symbol": "XAUUSD", "exchange": "OANDA",    "screener": "forex"},
+    {"symbol": "XTIUSD", "exchange": "OANDA",    "screener": "forex"},
 ]
 
 # ── Forex/Stocks for /coins keyboard ───────────────────────────────────────
@@ -130,8 +128,8 @@ FOREX_SYMBOLS = [
     {"symbol": "EURUSD", "exchange": "FX_IDC",   "screener": "forex"},
     {"symbol": "GBPUSD", "exchange": "FX_IDC",   "screener": "forex"},
     {"symbol": "USDJPY", "exchange": "FX_IDC",   "screener": "forex"},
-    {"symbol": "XAUUSD", "exchange": "FOREXCOM", "screener": "cfd"},
-    {"symbol": "USOIL",  "exchange": "FOREXCOM", "screener": "cfd"},
+    {"symbol": "XAUUSD", "exchange": "OANDA",    "screener": "forex"},
+    {"symbol": "XTIUSD", "exchange": "OANDA",    "screener": "forex"},
 ]
 
 STOCK_SYMBOLS = [

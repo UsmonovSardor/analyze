@@ -103,19 +103,23 @@ Follow the skill process exactly. Output ONLY the JSON object."""
         max_turns=1,
         allowed_tools=[],
     )
-    for short in (False, True):
+    import traceback as _tb
+    for attempt in range(2):
         try:
             text = await _run_query(prompt, options)
             start, end = text.find("{"), text.rfind("}")
             if start == -1 or end == -1:
+                print(f"[analyze_tv] {symbol} unparseable output: {text[:300]}")
                 return {"signal": "none", "symbol": symbol, "reason": f"unparseable: {text[:200]}", "score": 0}
             return json.loads(text[start:end + 1])
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            print(f"[analyze_tv] {symbol} JSON error: {e}")
             return {"signal": "none", "symbol": symbol, "reason": "invalid JSON", "score": 0}
         except Exception:
-            if not short:
+            print(f"[analyze_tv] {symbol} attempt {attempt+1} error:\n{_tb.format_exc()[:400]}")
+            if attempt == 0:
                 continue
-            return {"signal": "none", "symbol": symbol, "reason": "Claude error", "score": 0}
+            return {"signal": "none", "symbol": symbol, "reason": "Claude API error", "score": 0}
     return {"signal": "none", "symbol": symbol, "reason": "analyze_tv_direct failed", "score": 0}
 
 
