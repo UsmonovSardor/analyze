@@ -34,6 +34,22 @@ def send_chart(symbol: str, snap: dict, sig: dict | None = None, chat_id=None):
         print(f"[chart] error for {symbol}:\n{traceback.format_exc()}")
 
 
+def post_signal(symbol: str, snap: dict, sig: dict, sig_id: int, ctx_str: str,
+                kb: dict | None = None, chat_id=None):
+    """Post a full signal as ONE Telegram message: chart photo + caption (plan +
+    confluence + reasoning) + trade buttons. Falls back to text if the chart fails."""
+    caption = telegram.format_signal(sig, sig_id, ctx_str)
+    try:
+        png = chart.render(symbol, snap, sig)
+        mid = telegram.send_photo(png, caption=caption, reply_markup=kb, chat_id=chat_id)
+        if mid is not None:
+            return
+    except Exception:
+        print(f"[post_signal] chart error for {symbol}:\n{traceback.format_exc()}")
+    # Chart failed (or caption too long for a photo) — send text so the signal still goes out.
+    telegram.send(caption, reply_markup=kb, chat_id=chat_id)
+
+
 def send_outcome_chart(row: dict, exit_price: float, r_val: float, event: str):
     """Post the closed-trade chart with the exit marked and WIN/LOSS banner."""
     try:
@@ -93,8 +109,7 @@ async def _process_candidate(symbol: str, snap: dict, hint: str,
     sig_id = journal.add_signal(sig)
     can_auto = config.can_autotrade_side(sig.get("signal", "long"))
     kb = telegram.execute_keyboard(sig_id, allow_auto=can_auto) if config.trading_enabled() else None
-    send_chart(symbol, snap, sig)                                   # 1) grafik avval
-    telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)  # 2) reja + tugmalar pastida
+    post_signal(symbol, snap, sig, sig_id, ctx_str, kb=kb)   # grafik + reja + tugmalar = BITTA xabar
     if can_auto and config.TRADING_MODE == "auto":
         _try_execute(sig_id)
     print(f"[signal] #{sig_id} {symbol} posted")
@@ -416,8 +431,7 @@ async def analyze_on_demand(symbol_raw: str, chat_id=None) -> str:
             sig_id = journal.add_signal(sig)
             can_auto = config.can_autotrade_side(sig.get("signal", "long"))
             kb = telegram.execute_keyboard(sig_id, allow_auto=can_auto) if config.trading_enabled() else None
-            send_chart(symbol, snap, sig, chat_id=chat_id)                                       # 1) grafik avval
-            telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb, chat_id=chat_id)  # 2) reja pastida
+            post_signal(symbol, snap, sig, sig_id, ctx_str, kb=kb, chat_id=chat_id)  # BITTA xabar
             return ""  # already sent as a full signal + chart
         send_chart(symbol, snap, None, chat_id=chat_id)
         return (f"📊 <b>{symbol}</b> — tahlil qilindi, lekin signal BERILMADI\n"
