@@ -175,45 +175,58 @@ def format_manual_plan(sig: dict, sig_id: int) -> str:
     )
 
 
+def _conf_bar(score: int) -> str:
+    """A thin 10-segment confidence bar, e.g. ▰▰▰▰▰▰▰▰▱▱."""
+    score = max(0, min(10, int(round(score))))
+    return "▰" * score + "▱" * (10 - score)
+
+
 def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
     meta = strategy(sig.get("setup", ""))
     short = sig.get("signal") == "short" or sig.get("side") == "short"
     e, sl = float(sig["entry"]), float(sig["stop_loss"])
     r = abs(e - sl)
     tp1, tp2, tp3 = float(sig["tp1"]), float(sig["tp2"]), float(sig["tp3"])
-    risk_pct = abs(sl - e) / e * 100
+    score = int(round(float(sig.get("score", 0) or 0)))
 
     def rr(tp):
         return abs(tp - e) / r if r else 0.0
 
-    direction = "🔻 SHORT" if short else "🟢 LONG"
+    def gain(tp):            # profit-side % move (always positive, direction-aware)
+        return abs(tp - e) / e * 100
+
+    loss_pct = abs(sl - e) / e * 100
+    arrow = "🔻" if short else "🟢"
+    direction = "SHORT" if short else "LONG"
+
+    # Monospace, perfectly aligned trade plan (no emojis inside <pre> to keep columns straight)
+    P = fmt_price
+    plan = (
+        f"{'Kirish':<7}{P(e):>13}\n"
+        f"{'Stop':<7}{P(sl):>13}{'-'+format(loss_pct,'.2f')+'%':>10}{'-1.0R':>7}\n"
+        f"{'─'*37}\n"
+        f"{'TP1':<7}{P(tp1):>13}{'+'+format(gain(tp1),'.2f')+'%':>10}{'+'+format(rr(tp1),'.1f')+'R':>7}{'40%':>6}\n"
+        f"{'TP2':<7}{P(tp2):>13}{'+'+format(gain(tp2),'.2f')+'%':>10}{'+'+format(rr(tp2),'.1f')+'R':>7}{'40%':>6}\n"
+        f"{'TP3':<7}{P(tp3):>13}{'+'+format(gain(tp3),'.2f')+'%':>10}{'+'+format(rr(tp3),'.1f')+'R':>7}{'20%':>6}"
+    )
 
     lines = [
-        f"{meta['emoji']} <b>{direction} SIGNAL #{sig_id}</b> — <b>{sig['symbol']}</b>",
-        f"<i>{meta['name']} · ishonch {sig.get('score')}/10</i>",
+        f"{arrow} <b>{direction}</b>  ·  <b>{sig['symbol']}</b>   <code>#{sig_id}</code>",
+        f"<i>{meta['name']}</i>",
+        f"Ishonch  <b>{score}/10</b>   {_conf_bar(score)}",
         "",
-        "<b>━━━ Kirish rejasi ━━━</b>",
-        f"📍 Entry:  <code>{fmt_price(e)}</code>",
-        f"🛑 Stop:   <code>{fmt_price(sl)}</code>  <i>(-1R · {risk_pct:.2f}%)</i>",
-        f"🎯 TP1:    <code>{fmt_price(tp1)}</code>  <i>(+{rr(tp1):.1f}R · {_pct(tp1,e)} · 40%)</i>",
-        f"🎯 TP2:    <code>{fmt_price(tp2)}</code>  <i>(+{rr(tp2):.1f}R · {_pct(tp2,e)} · 40%)</i>",
-        f"🎯 TP3:    <code>{fmt_price(tp3)}</code>  <i>(+{rr(tp3):.1f}R · {_pct(tp3,e)} · 20%)</i>",
-        "",
-        "<b>━━━ Qaysi strategiya ━━━</b>",
-        f"{meta['emoji']} <b>{meta['name']}</b>",
-        f"<i>{meta['tagline']}</i>",
-        "",
-        "<b>━━━ Confluence tahlili ━━━</b>",
+        "<b>📋 Savdo rejasi</b>",
+        f"<pre>{plan}</pre>",
+        "<b>📊 Confluence</b>",
         f"<pre>{render_scorecard(sig.get('scorecard', {}))}</pre>",
+        "<b>💡 Asoslash</b>",
+        f"<i>{sig.get('reasoning', '')}</i>",
     ]
     if market_ctx:
-        lines += ["", f"🌐 <b>Bozor:</b> {market_ctx}"]
+        lines += ["", f"🌐 {market_ctx}"]
     lines += [
         "",
-        "<b>━━━ Asoslash ━━━</b>",
-        f"💡 {sig.get('reasoning', '')}",
-        "",
-        "⚖️ Risk: depozitning 1% · TP1 dan keyin SL→breakeven",
+        "⚖️ Risk: depozitning <b>1%</b>  ·  TP1 dan keyin SL → breakeven",
         "⚠️ <i>Bu moliyaviy maslahat emas</i>",
     ]
     return "\n".join(lines)

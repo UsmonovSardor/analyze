@@ -25,10 +25,11 @@ def send_chart(symbol: str, snap: dict, sig: dict | None = None, chat_id=None):
     """Render and post an annotated chart; never let a chart error block a signal."""
     try:
         png = chart.render(symbol, snap, sig)
-        _mark = ""
+        cap = f"📈 <b>{symbol}</b> · 1h"
         if sig and sig.get("signal") in ("long", "short"):
-            _mark = " · 🔻 SHORT kirish" if sig.get("signal") == "short" else " · 🟢 LONG kirish"
-        telegram.send_photo(png, caption=f"📈 <b>{symbol}</b> · 1h grafik{_mark}", chat_id=chat_id)
+            cap = (f"🔻 <b>{symbol}</b> · SHORT · 1h" if sig.get("signal") == "short"
+                   else f"🟢 <b>{symbol}</b> · LONG · 1h")
+        telegram.send_photo(png, caption=cap, chat_id=chat_id)
     except Exception:
         print(f"[chart] error for {symbol}:\n{traceback.format_exc()}")
 
@@ -92,8 +93,8 @@ async def _process_candidate(symbol: str, snap: dict, hint: str,
     sig_id = journal.add_signal(sig)
     can_auto = config.can_autotrade_side(sig.get("signal", "long"))
     kb = telegram.execute_keyboard(sig_id, allow_auto=can_auto) if config.trading_enabled() else None
-    telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)
-    send_chart(symbol, snap, sig)
+    send_chart(symbol, snap, sig)                                   # 1) grafik avval
+    telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)  # 2) reja + tugmalar pastida
     if can_auto and config.TRADING_MODE == "auto":
         _try_execute(sig_id)
     print(f"[signal] #{sig_id} {symbol} posted")
@@ -415,8 +416,8 @@ async def analyze_on_demand(symbol_raw: str, chat_id=None) -> str:
             sig_id = journal.add_signal(sig)
             can_auto = config.can_autotrade_side(sig.get("signal", "long"))
             kb = telegram.execute_keyboard(sig_id, allow_auto=can_auto) if config.trading_enabled() else None
-            telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb, chat_id=chat_id)
-            send_chart(symbol, snap, sig, chat_id=chat_id)
+            send_chart(symbol, snap, sig, chat_id=chat_id)                                       # 1) grafik avval
+            telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb, chat_id=chat_id)  # 2) reja pastida
             return ""  # already sent as a full signal + chart
         send_chart(symbol, snap, None, chat_id=chat_id)
         return (f"📊 <b>{symbol}</b> — tahlil qilindi, lekin signal BERILMADI\n"
