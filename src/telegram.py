@@ -137,22 +137,35 @@ def coins_keyboard() -> dict:
     return {"inline_keyboard": buttons}
 
 
-def execute_keyboard(sig_id: int) -> dict:
-    return {"inline_keyboard": [
-        [{"text": "🤖 Avto savdo", "callback_data": f"auto:{sig_id}"},
-         {"text": "✍️ Qo'lda savdo", "callback_data": f"manual:{sig_id}"}],
-        [{"text": "👁️ Kuzatish (Test)", "callback_data": f"skip:{sig_id}"}],
-    ]}
+def execute_keyboard(sig_id: int, allow_auto: bool = True) -> dict:
+    """Trade buttons. When allow_auto is False (e.g. a SHORT on a spot-only account)
+    the auto button is hidden — only manual + watch are offered."""
+    rows = []
+    if allow_auto:
+        rows.append([{"text": "🤖 Avto savdo", "callback_data": f"auto:{sig_id}"},
+                     {"text": "✍️ Qo'lda savdo", "callback_data": f"manual:{sig_id}"}])
+    else:
+        rows.append([{"text": "✍️ Qo'lda savdo", "callback_data": f"manual:{sig_id}"}])
+    rows.append([{"text": "👁️ Kuzatish (Test)", "callback_data": f"skip:{sig_id}"}])
+    return {"inline_keyboard": rows}
 
 
 def format_manual_plan(sig: dict, sig_id: int) -> str:
     """Copy-paste plan for the user to place the order themselves on Binance."""
+    short = sig.get("signal") == "short" or sig.get("side") == "short"
     e, sl = float(sig["entry"]), float(sig["stop_loss"])
+    if short:
+        venue = "Binance Futures"
+        step2 = f"2️⃣ <b>Limit SELL / Short</b> oching: <code>{fmt_price(e)}</code>"
+    else:
+        venue = "Binance Spot yoki Futures"
+        step2 = f"2️⃣ <b>Limit BUY / Long</b> qo'ying: <code>{fmt_price(e)}</code>"
     return (
-        f"✍️ <b>QO'LDA SAVDO rejasi</b> — #{sig_id} {sig['symbol']}\n\n"
-        f"1️⃣ Binance Spot'da <b>{sig['symbol']}</b> oching\n"
-        f"2️⃣ <b>Limit Buy</b> qo'ying: <code>{fmt_price(e)}</code>\n"
-        f"3️⃣ <b>OCO / TP-SL</b> sozlang:\n"
+        f"✍️ <b>QO'LDA SAVDO rejasi</b> — #{sig_id} {sig['symbol']} "
+        f"({'🔻 SHORT' if short else '🟢 LONG'})\n\n"
+        f"1️⃣ {venue}'da <b>{sig['symbol']}</b> oching\n"
+        f"{step2}\n"
+        f"3️⃣ <b>TP / SL</b> sozlang:\n"
         f"   🛑 Stop-loss: <code>{fmt_price(sl)}</code>\n"
         f"   🎯 Take-profit (TP2): <code>{fmt_price(sig['tp2'])}</code>\n"
         f"4️⃣ Hajm: depozitning 1% riskiga moslang\n\n"
@@ -164,21 +177,27 @@ def format_manual_plan(sig: dict, sig_id: int) -> str:
 
 def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
     meta = strategy(sig.get("setup", ""))
+    short = sig.get("signal") == "short" or sig.get("side") == "short"
     e, sl = float(sig["entry"]), float(sig["stop_loss"])
-    r = e - sl
+    r = abs(e - sl)
     tp1, tp2, tp3 = float(sig["tp1"]), float(sig["tp2"]), float(sig["tp3"])
-    risk_pct = (e - sl) / e * 100
+    risk_pct = abs(sl - e) / e * 100
+
+    def rr(tp):
+        return abs(tp - e) / r if r else 0.0
+
+    direction = "🔻 SHORT" if short else "🟢 LONG"
 
     lines = [
-        f"{meta['emoji']} <b>LONG SIGNAL #{sig_id}</b> — <b>{sig['symbol']}</b>",
+        f"{meta['emoji']} <b>{direction} SIGNAL #{sig_id}</b> — <b>{sig['symbol']}</b>",
         f"<i>{meta['name']} · ishonch {sig.get('score')}/10</i>",
         "",
         "<b>━━━ Kirish rejasi ━━━</b>",
         f"📍 Entry:  <code>{fmt_price(e)}</code>",
         f"🛑 Stop:   <code>{fmt_price(sl)}</code>  <i>(-1R · {risk_pct:.2f}%)</i>",
-        f"🎯 TP1:    <code>{fmt_price(tp1)}</code>  <i>(+{(tp1-e)/r:.1f}R · {_pct(tp1,e)} · 40%)</i>",
-        f"🎯 TP2:    <code>{fmt_price(tp2)}</code>  <i>(+{(tp2-e)/r:.1f}R · {_pct(tp2,e)} · 40%)</i>",
-        f"🎯 TP3:    <code>{fmt_price(tp3)}</code>  <i>(+{(tp3-e)/r:.1f}R · {_pct(tp3,e)} · 20%)</i>",
+        f"🎯 TP1:    <code>{fmt_price(tp1)}</code>  <i>(+{rr(tp1):.1f}R · {_pct(tp1,e)} · 40%)</i>",
+        f"🎯 TP2:    <code>{fmt_price(tp2)}</code>  <i>(+{rr(tp2):.1f}R · {_pct(tp2,e)} · 40%)</i>",
+        f"🎯 TP3:    <code>{fmt_price(tp3)}</code>  <i>(+{rr(tp3):.1f}R · {_pct(tp3,e)} · 20%)</i>",
         "",
         "<b>━━━ Qaysi strategiya ━━━</b>",
         f"{meta['emoji']} <b>{meta['name']}</b>",
@@ -236,15 +255,17 @@ def format_weekly(stats: dict) -> str:
 def format_help() -> str:
     return (
         "👋 <b>Trading Analyst Bot</b>\n"
-        "📊 AI-asosli crypto spot tahlil va signal tizimi\n\n"
+        "📊 AI-asosli ko'p bozorli signal tizimi (crypto · forex · oltin · aksiya)\n\n"
         "📌 <b>Imkoniyatlar:</b>\n"
-        "• 24/7 avtomatik skanerlash (35+ juftlik)\n"
-        "• Claude AI bilan chuqur tahlil + grafik\n"
+        "• 24/7 avtomatik skanerlash (40+ instrument)\n"
+        "• Gemini AI bilan chuqur tahlil + grafik\n"
+        "• 🟢 LONG va 🔻 SHORT — har ikki yo'nalish\n"
         "• Entry / TP1-3 / Stop-loss aniq belgilangan\n"
-        "• Avto va qo'lda savdo (Binance)\n"
-        "• Signal natijasini avtomatik kuzatish\n\n"
+        "• Avto va qo'lda savdo (Binance Futures)\n"
+        "• Signal natijasini grafik bilan avtomatik kuzatish\n\n"
         "🔘 <b>Buyruqlar:</b>\n"
-        "🪙 <code>/coins</code> — valyutani tanlang → Claude tahlil + grafik\n"
+        "🪙 <code>/coins</code> — instrument tanlang → AI tahlil + grafik\n"
+        "🔍 <code>/analyze BTC</code> yoki <code>/analyze EURUSD</code> — istalganini tahlil\n"
         "🔄 <code>/refresh</code> — bozorni hozir skanerlash\n"
         "📈 <code>/stats</code> — haftalik statistika\n"
         "📂 <code>/open</code> — ochiq signallar\n"
@@ -278,8 +299,12 @@ def format_open(rows: list) -> str:
     return "\n".join(lines)
 
 
-def format_trade_filled(sig_id: int, symbol: str, qty: float, entry: float, oco: bool) -> str:
-    txt = (f"💰 <b>Savdo bajarildi</b> #{sig_id} {symbol}\n"
-           f"Sotib olindi: <code>{qty}</code> @ ~<code>{fmt_price(entry)}</code>")
-    txt += "\n🛡 TP/SL OCO order qo'yildi" if oco else "\n⚠️ OCO qo'yilmadi — qo'lda nazorat qiling"
+def format_trade_filled(sig_id: int, symbol: str, qty: float, entry: float, oco: bool,
+                        side: str = "long", leverage: int | None = None) -> str:
+    verb = "Short ochildi" if side == "short" else "Long ochildi"
+    lev = f" · {leverage}x" if leverage else ""
+    txt = (f"💰 <b>Savdo bajarildi</b> #{sig_id} {symbol} "
+           f"({'🔻 SHORT' if side == 'short' else '🟢 LONG'}{lev})\n"
+           f"{verb}: <code>{qty}</code> @ ~<code>{fmt_price(entry)}</code>")
+    txt += "\n🛡 TP/SL order qo'yildi (Binance serverida)" if oco else "\n⚠️ TP/SL qo'yilmadi — qo'lda nazorat qiling"
     return txt

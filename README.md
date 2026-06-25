@@ -1,16 +1,19 @@
 # Trading Signal Bot (shaxsiy)
 
-Crypto spot swing-trading signal tizimi: 24/7 screener → Claude tahlil → risk filtri → Telegram.
-Faqat signal beradi, avtomatik savdo qilmaydi.
+Ko'p bozorli (crypto · forex · oltin · aksiya) swing-trading signal tizimi:
+24/7 screener → **Gemini AI** tahlil → risk filtri → Telegram. Har ikki yo'nalish
+(🟢 LONG va 🔻 SHORT). Ixtiyoriy: Binance Futures'da avto/qo'lda savdo.
 
 ## Arxitektura
 
-1. **Screener** (`src/screener.py`) — har 15 daqiqada 15 ta juftlikni tekshiradi, Claude'siz.
-2. **Claude tahlil** (`src/analyzer.py`) — faqat nomzod setup topilganda chaqiriladi.
+1. **Screener** (`src/screener_tv.py` + `src/screener.py`) — har 15 daqiqada 40+ instrumentni
+   tekshiradi (TradingView ma'lumotlari), AI'siz. Long va short nomzodlarni topadi.
+2. **Gemini tahlil** (`src/analyzer.py`) — faqat nomzod setup topilganda chaqiriladi.
    Strategiya bilimlari `skill/` papkasida — o'zgartirsangiz bot darhol yangi qoidalar bilan ishlaydi.
-3. **Risk engine** (`src/risk.py`) — model taklifini deterministik tekshiradi (R:R, score, narx).
-4. **Telegram** — signal, TP/SL urilganda yangilanish, haftalik statistika.
-5. **Jurnal** (`journal.db`) — har signal va natijasi saqlanadi.
+3. **Risk engine** (`src/risk.py`) — model taklifini deterministik tekshiradi (R:R, score, narx, long/short tartibi).
+4. **Telegram** — signal + grafik, TP/SL urilganda yangilanish + natija grafigi, haftalik statistika.
+5. **Savdo** (`src/exchange_trade.py`) — ixtiyoriy. Binance Futures (long+short) yoki spot (faqat long).
+6. **Jurnal** (`journal.db`) — har signal, yo'nalishi va natijasi saqlanadi.
 
 ## Lokal test
 
@@ -25,14 +28,34 @@ python -m src.main
 
 Telegram sozlanmagan bo'lsa xabarlar konsolga chiqadi — xavfsiz test rejimi.
 
-## Railway deploy
+## Deploy
 
-1. Repo'ni GitHub'ga push qiling, Railway'da New Project → Deploy from GitHub.
-2. Dockerfile avtomatik aniqlanadi.
-3. **Volume** qo'shing, mount path: `/data` (jurnal o'chib ketmasligi uchun).
-4. Variables: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, va `CLAUDE_CODE_OAUTH_TOKEN`
-   (lokal terminalda `claude setup-token` bajaring va chiqqan tokenni qo'ying)
-   yoki `ANTHROPIC_API_KEY`.
+Avto savdo Binance'ga ulanishni talab qiladi. `api.binance.com` / `fapi.binance.com`
+ba'zi datsentrlardan (jumladan Railway US IP) **451 bilan bloklangan**. Shuning uchun
+avto savdo uchun **Hetzner EU server** tavsiya etiladi (Binance'ga ulanadi).
+
+### Hetzner (yoki boshqa Binance'ga ulanadigan server) — avto savdo bilan
+```bash
+git clone <repo> && cd trading-signal-bot
+cp .env.example .env   # to'ldiring (pastdagi o'zgaruvchilar)
+docker compose up -d --build
+```
+
+### Railway — faqat signal (avto savdo 451 blok)
+1. GitHub'ga push → Railway'da New Project → Deploy from GitHub. Dockerfile aniqlanadi.
+2. **Volume** qo'shing, mount path: `/data` (jurnal o'chib ketmasligi uchun).
+
+### Muhim env o'zgaruvchilar
+| O'zgaruvchi | Tavsif |
+|---|---|
+| `GEMINI_API_KEY` | **Majburiy** — AI tahlil (Google AI Studio, bepul tier) |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Telegram yetkazib berish |
+| `BINANCE_API_KEY`, `BINANCE_API_SECRET` | Ixtiyoriy — savdo (Futures ruxsati, **Withdrawal o'chirilgan**) |
+| `BINANCE_MARKET` | `future` (long+short, standart) yoki `spot` (faqat long) |
+| `LEVERAGE` | Futures plecho (standart `3`, past tuting) |
+| `TRADING_MODE` | `semi` (tugma bilan tasdiq) · `auto` · `off` |
+| `MIN_SCORE` | Minimal ishonch (standart `6`) |
+| `ALLOW_SHORTS` | `true`/`false` (standart `true`) |
 
 ## Telegram sozlash
 
@@ -57,18 +80,23 @@ Bu deterministik qatlam (screener + risk qoidalari) bo'yicha sinaydi — Claude'
 shuning uchun jonli natijaga nisbatan konservativ baho. "Asosiy edge bormi?" degan
 savolga javob beradi.
 
-## Jonli savdo (Binance, ixtiyoriy)
+## Jonli savdo (Binance Futures, ixtiyoriy)
 
-`.env`da `BINANCE_API_KEY`/`SECRET` to'ldirilsa, signal ostida **✅ Bajarish /
-❌ O'tkazib yuborish** tugmalari chiqadi (semi rejim). Bajarish bosilganda:
-market buy + OCO (TP2/SL) order qo'yiladi. OCO Binance serverida turadi, shuning
-uchun bot o'chsa ham stop-loss ishlaydi.
+`.env`da `BINANCE_API_KEY`/`SECRET` to'ldirilsa, har signal ostida tugmalar chiqadi:
+**🤖 Avto savdo · ✍️ Qo'lda savdo · 👁️ Kuzatish**.
 
-- API key: **faqat Spot Trading**, Withdrawal **o'chirilgan**.
-- `TRADING_MODE`: `semi` (tugma bilan tasdiq) | `auto` | `off`.
-- Himoyalar: `RISK_PER_TRADE` (1%), `MAX_TRADE_QUOTE` (USDT cap), `DAILY_LOSS_STOP_R` (-3R).
-- ⚠️ `api.binance.com` Railway US IP'dan bloklangan — savdoni Binance'ga ulanadigan
-  joydan (Mac yoki UZ VPS) ishga tushiring. Signal/hisobot Railway'da qoladi.
+- **🤖 Avto** — AI o'zi order ochadi: Futures market open (long=BUY / short=SELL) +
+  reduceOnly TP (TP2) va SL orderlari. Bu orderlar Binance serverida turadi, bot o'chsa ham ishlaydi.
+- **✍️ Qo'lda** — botning aniq rejasi (entry/SL/TP) yuboriladi, siz orderni o'zingiz kiritasiz.
+- **👁️ Kuzatish** — order ochilmaydi, lekin TP/SL natijalari kuzatiladi.
+
+Sozlamalar:
+- API key: **Enable Futures** ruxsati, Withdrawal **o'chirilgan**.
+- `BINANCE_MARKET=future` (long+short) yoki `spot` (faqat long, OCO bilan).
+- `TRADING_MODE`: `semi` (tugma bilan tasdiq) | `auto` (avtomatik) | `off`.
+- Himoyalar: `RISK_PER_TRADE` (1%), `MAX_TRADE_QUOTE` (margin cap), `LEVERAGE`, `DAILY_LOSS_STOP_R` (-3R).
+- ⚠️ Binance ba'zi serverlardan 451 bloklangan — savdoni Binance'ga ulanadigan
+  serverdan (Hetzner EU) ishga tushiring. Ma'lumot olish (`data-api.binance.vision`) hamma joyda ishlaydi.
 
 ## Hisobotlar
 

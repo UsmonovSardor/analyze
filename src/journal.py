@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS signals (
     created_at INTEGER NOT NULL,
     symbol TEXT NOT NULL,
     setup TEXT,
+    side TEXT NOT NULL DEFAULT 'long',   -- long | short
     score REAL,
     entry REAL, stop_loss REAL, tp1 REAL, tp2 REAL, tp3 REAL,
     reasoning TEXT,
@@ -28,6 +29,7 @@ _MIGRATIONS = [  # idempotent ADD COLUMN for DBs created before these fields exi
     ("signals", "qty", "REAL"),
     ("signals", "fill_price", "REAL"),
     ("signals", "oco_id", "TEXT"),
+    ("signals", "side", "TEXT NOT NULL DEFAULT 'long'"),
 ]
 
 
@@ -44,11 +46,12 @@ def conn():
 
 def add_signal(sig: dict) -> int:
     with conn() as c:
+        side = "short" if sig.get("signal") == "short" else "long"
         cur = c.execute(
-            "INSERT INTO signals (created_at, symbol, setup, score, entry, stop_loss, tp1, tp2, tp3, reasoning)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO signals (created_at, symbol, setup, side, score, entry, stop_loss, tp1, tp2, tp3, reasoning)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
-                int(time.time()), sig["symbol"], sig.get("setup"), sig.get("score"),
+                int(time.time()), sig["symbol"], sig.get("setup"), side, sig.get("score"),
                 sig["entry"], sig["stop_loss"], sig["tp1"], sig["tp2"], sig["tp3"],
                 sig.get("reasoning", ""),
             ),

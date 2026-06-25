@@ -5,8 +5,8 @@ SYMBOLS = [
     "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
     "DOGE/USDT", "ADA/USDT", "LINK/USDT", "AVAX/USDT", "TON/USDT",
     "DOT/USDT", "NEAR/USDT", "SUI/USDT", "APT/USDT", "LTC/USDT",
-    "TRX/USDT", "MATIC/USDT", "ATOM/USDT", "UNI/USDT", "FIL/USDT",
-    "INJ/USDT", "ARB/USDT", "OP/USDT", "AAVE/USDT", "RNDR/USDT",
+    "TRX/USDT", "POL/USDT", "ATOM/USDT", "UNI/USDT", "FIL/USDT",
+    "INJ/USDT", "ARB/USDT", "OP/USDT", "AAVE/USDT", "RENDER/USDT",
     "SEI/USDT", "TIA/USDT", "FET/USDT", "RUNE/USDT", "ICP/USDT",
     "HBAR/USDT", "ALGO/USDT", "STX/USDT", "GALA/USDT", "SAND/USDT",
 ]
@@ -19,15 +19,22 @@ SCAN_INTERVAL_SEC = 15 * 60       # screener cadence
 OUTCOME_CHECK_SEC = 10 * 60       # open-signal TP/SL checker cadence
 
 # Risk engine gates (deterministic, independent of the model)
-MIN_SCORE = 7
-MIN_RR_TP2 = 2.0                  # entry->TP2 must be >= 2R
-MAX_SIGNALS_PER_DAY = 15
-MAX_OPEN_SIGNALS = 4
-COOLDOWN_HOURS_PER_SYMBOL = 12    # no repeat signal on same symbol within this window
+# Tuned for ~10 signals/day across crypto + forex + stocks, both directions.
+MIN_SCORE = int(os.getenv("MIN_SCORE", "6"))
+MIN_RR_TP2 = float(os.getenv("MIN_RR_TP2", "1.8"))   # entry->TP2 must be >= this R
+MAX_SIGNALS_PER_DAY = int(os.getenv("MAX_SIGNALS_PER_DAY", "20"))
+TARGET_SIGNALS_PER_DAY = int(os.getenv("TARGET_SIGNALS_PER_DAY", "10"))
+MAX_OPEN_SIGNALS = int(os.getenv("MAX_OPEN_SIGNALS", "14"))
+COOLDOWN_HOURS_PER_SYMBOL = int(os.getenv("COOLDOWN_HOURS_PER_SYMBOL", "6"))
+
+# Direction: allow short signals (forex both ways; crypto short on Futures).
+ALLOW_SHORTS = os.getenv("ALLOW_SHORTS", "true").lower() == "true"
+# When BTC 4h is bearish, block crypto LONGS but still allow crypto SHORTS.
+BTC_GATE_BLOCKS_LONGS_ONLY = True
 
 # Gemini
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-MAX_CLAUDE_CALLS_PER_DAY = int(os.getenv("MAX_CLAUDE_CALLS_PER_DAY", "40"))
+MAX_CLAUDE_CALLS_PER_DAY = int(os.getenv("MAX_CLAUDE_CALLS_PER_DAY", "150"))
 
 # Telegram
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -40,12 +47,30 @@ BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 # "off" = never trade. Defaults to semi when keys exist, else off.
 TRADING_MODE = os.getenv("TRADING_MODE", "semi")
 RISK_PER_TRADE = float(os.getenv("RISK_PER_TRADE", "0.01"))   # 1% of quote balance
-MAX_TRADE_QUOTE = float(os.getenv("MAX_TRADE_QUOTE", "100"))  # hard cap per position (USDT)
+MAX_TRADE_QUOTE = float(os.getenv("MAX_TRADE_QUOTE", "100"))  # hard cap per position (USDT margin)
 DAILY_LOSS_STOP_R = float(os.getenv("DAILY_LOSS_STOP_R", "-3"))  # halt trading for the day at -3R
-BINANCE_HOSTNAME = os.getenv("BINANCE_HOSTNAME", "api.binance.com")
+
+# Market type for execution: "future" (USDT-M perpetuals — supports SHORT) or "spot" (LONG only).
+# Futures is required to trade short signals. Set BINANCE_MARKET=spot to force spot/long-only.
+BINANCE_MARKET = os.getenv("BINANCE_MARKET", "future")
+LEVERAGE = int(os.getenv("LEVERAGE", "3"))  # futures leverage per position (keep low)
+# Futures host: fapi.binance.com. Spot host: api.binance.com.
+# On a Binance-reachable server (Hetzner EU) the defaults work; on a blocked host you'll get 451.
+BINANCE_HOSTNAME = os.getenv("BINANCE_HOSTNAME", "")  # empty => ccxt default for the chosen market
 
 def trading_enabled() -> bool:
     return bool(BINANCE_API_KEY and BINANCE_API_SECRET) and TRADING_MODE in ("semi", "auto")
+
+def futures_enabled() -> bool:
+    return trading_enabled() and BINANCE_MARKET == "future"
+
+def can_autotrade_side(side: str) -> bool:
+    """Auto-trade is possible for longs always; shorts only on futures (spot can't short)."""
+    if not trading_enabled():
+        return False
+    if side == "short":
+        return BINANCE_MARKET == "future"
+    return True
 
 # Storage (attach a Railway volume at /data in production)
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "..", "journal.db"))
@@ -85,8 +110,8 @@ TV_SYMBOLS = [
     {"symbol": "ARBUSDT",  "exchange": "BINANCE", "screener": "crypto"},
     {"symbol": "OPUSDT",   "exchange": "BINANCE", "screener": "crypto"},
     {"symbol": "AAVEUSDT", "exchange": "BINANCE", "screener": "crypto"},
-    {"symbol": "FETUSDT",  "exchange": "BINANCE", "screener": "crypto"},
-    {"symbol": "RNDRUSDT", "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "FETUSDT",    "exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "RENDERUSDT", "exchange": "BINANCE", "screener": "crypto"},
     {"symbol": "HBARUSDT", "exchange": "BINANCE", "screener": "crypto"},
     {"symbol": "ATOMUSDT", "exchange": "BINANCE", "screener": "crypto"},
     {"symbol": "UNIUSDT",  "exchange": "BINANCE", "screener": "crypto"},
@@ -101,7 +126,7 @@ TV_SYMBOLS = [
     {"symbol": "SANDUSDT", "exchange": "BINANCE", "screener": "crypto"},
     {"symbol": "ALGOUSDT", "exchange": "BINANCE", "screener": "crypto"},
     {"symbol": "FILUSDT",  "exchange": "BINANCE", "screener": "crypto"},
-    {"symbol": "MATICUSDT","exchange": "BINANCE", "screener": "crypto"},
+    {"symbol": "POLUSDT",  "exchange": "BINANCE", "screener": "crypto"},
     {"symbol": "TONUSDT",  "exchange": "BYBIT",   "screener": "crypto"},
 
     # ── US Stocks ─────────────────────────────────────────────────────────

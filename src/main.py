@@ -25,9 +25,10 @@ def send_chart(symbol: str, snap: dict, sig: dict | None = None, chat_id=None):
     """Render and post an annotated chart; never let a chart error block a signal."""
     try:
         png = chart.render(symbol, snap, sig)
-        telegram.send_photo(png, caption=f"📈 <b>{symbol}</b> · 1h grafik"
-                            + (" · kirish nuqtasi belgilandi" if sig and sig.get("signal") == "long" else ""),
-                            chat_id=chat_id)
+        _mark = ""
+        if sig and sig.get("signal") in ("long", "short"):
+            _mark = " · 🔻 SHORT kirish" if sig.get("signal") == "short" else " · 🟢 LONG kirish"
+        telegram.send_photo(png, caption=f"📈 <b>{symbol}</b> · 1h grafik{_mark}", chat_id=chat_id)
     except Exception:
         print(f"[chart] error for {symbol}:\n{traceback.format_exc()}")
 
@@ -36,7 +37,7 @@ def send_outcome_chart(row: dict, exit_price: float, r_val: float, event: str):
     """Post the closed-trade chart with the exit marked and WIN/LOSS banner."""
     try:
         snap = snapshot(row["symbol"], config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-        sig = {"signal": "long", "symbol": row["symbol"], "setup": row.get("setup"),
+        sig = {"signal": row.get("side", "long"), "symbol": row["symbol"], "setup": row.get("setup"),
                "score": row.get("score"), "entry": row["entry"], "stop_loss": row["stop_loss"],
                "tp1": row["tp1"], "tp2": row["tp2"], "tp3": row["tp3"]}
         png = chart.render(row["symbol"], snap, sig, {"exit": exit_price, "r_val": r_val, "event": event})
@@ -89,10 +90,11 @@ async def _process_candidate(symbol: str, snap: dict, hint: str,
         return False
 
     sig_id = journal.add_signal(sig)
-    kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
+    can_auto = config.can_autotrade_side(sig.get("signal", "long"))
+    kb = telegram.execute_keyboard(sig_id, allow_auto=can_auto) if config.trading_enabled() else None
     telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb)
     send_chart(symbol, snap, sig)
-    if config.trading_enabled() and config.TRADING_MODE == "auto":
+    if can_auto and config.TRADING_MODE == "auto":
         _try_execute(sig_id)
     print(f"[signal] #{sig_id} {symbol} posted")
     return True
@@ -118,8 +120,8 @@ async def _find_candidate_tv_async(tv_sym: dict):
     return await asyncio.to_thread(find_candidate_tv, tv_sym)
 
 
-async def _process_tv_noncrpyto(tv_sym: dict, perf: dict, ctx_label: str) -> bool:
-    """Run Claude analysis for forex/stocks/indices using tradingview-ta data."""
+async def _process_tv_noncrpyto(tv_sym: dict, hint, perf: dict, ctx_label: str) -> bool:
+    """Run Gemini analysis for forex/stocks/indices using tradingview-ta data."""
     from .screener_tv import get_tv_analysis
     from .analyzer import analyze_tv_direct
 
@@ -137,9 +139,10 @@ async def _process_tv_noncrpyto(tv_sym: dict, perf: dict, ctx_label: str) -> boo
     if not current_price:
         return False
 
-    print(f"[scan-tv] {symbol} -> Claude (non-crypto)")
+    side = hint.get("side", "long") if isinstance(hint, dict) else "long"
+    print(f"[scan-tv] {symbol} -> Gemini (non-crypto, {side})")
     journal.bump_claude_calls()
-    sig = await analyze_tv_direct(symbol, e1h, e4h, "TV", perf)
+    sig = await analyze_tv_direct(symbol, e1h, e4h, hint, perf)
     sig["symbol"] = symbol
 
     ok, why = risk.validate(sig, current_price)
@@ -172,7 +175,8 @@ async def scan_once(notify_chat_id=None):
         forex_syms   = [s for s in noncrypto if s["screener"] == "forex"]
         stock_syms   = [s for s in noncrypto if s["screener"] == "america"]
 
-        crypto_line = f"✅ Crypto: {len(crypto_syms)} ta" if btc_ok else "⏭ Crypto: o’tkazildi (BTC pastda)"
+        crypto_line = (f"✅ Crypto: {len(crypto_syms)} ta (long+short)" if btc_ok
+                       else f"📉 Crypto: {len(crypto_syms)} ta (BTC pastda — faqat SHORT)")
         _notify(
             f"🔍 <b>Skanerlash boshlandi</b>\n"
             f"BTC: {btc_status}\n"
@@ -188,11 +192,12 @@ async def scan_once(notify_chat_id=None):
         for tv_sym in config.TV_SYMBOLS:
             ccxt_symbol = tv_symbol_to_ccxt(tv_sym)
             if ccxt_symbol:
-                if not btc_ok:
-                    continue
                 try:
                     hint = await _find_candidate_tv_async(tv_sym)
                     if not hint:
+                        continue
+                    # When BTC 4h is bearish, block crypto LONGS but still allow SHORTS.
+                    if not btc_ok and hint.get("side") == "long":
                         continue
                     snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
                         ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
@@ -209,7 +214,7 @@ async def scan_once(notify_chat_id=None):
                     hint = await _find_candidate_tv_async(tv_sym)
                     if not hint:
                         continue
-                    sent = await _process_tv_noncrpyto(tv_sym, perf, f"{tv_sym['symbol']} • {tv_sym['screener'].upper()}")
+                    sent = await _process_tv_noncrpyto(tv_sym, hint, perf, f"{tv_sym['symbol']} • {tv_sym['screener'].upper()}")
                     if sent:
                         signals_found += 1
                 except Exception as exc:
@@ -230,8 +235,7 @@ async def scan_once(notify_chat_id=None):
 
     # ── Original ccxt screener path ───────────────────────────────────────
     if not btc_ok:
-        _notify("📉 <b>BTC pasayish trendida</b> — hozir kuchli signal sharoiti yo'q.")
-        return
+        _notify("📉 <b>BTC pasayish trendida</b> — faqat SHORT setuplar qidirilmoqda.")
     signals_found = 0
     for symbol in config.SYMBOLS:
         try:
@@ -239,6 +243,9 @@ async def scan_once(notify_chat_id=None):
                 symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
             hint = screener.find_candidate(snap)
             if not hint:
+                continue
+            # When BTC is bearish, block longs but allow shorts.
+            if not btc_ok and hint.get("side") == "long":
                 continue
             sent = await _process_candidate(symbol, snap, hint, btc_snap, perf, ctx_str)
             if sent:
@@ -263,67 +270,133 @@ def _try_execute(sig_id: int):
         telegram.send(f"❌ Savdo bajarilmadi #{sig_id}: {res.get('error')}")
         return res.get("error")
     journal.mark_executed(sig_id, res["qty"], res["fill"], res.get("oco_id"))
-    telegram.send(telegram.format_trade_filled(sig_id, sig["symbol"], res["qty"], res["fill"], res["oco"]))
+    telegram.send(telegram.format_trade_filled(
+        sig_id, sig["symbol"], res["qty"], res["fill"], res["oco"],
+        side=res.get("side", sig.get("side", "long")), leverage=res.get("leverage")))
     if res.get("warn"):
         telegram.send(f"⚠️ #{sig_id}: {res['warn']}")
     return "ok"
 
 
 def realized_r(row: dict, exit_price: float) -> float:
-    """Weighted result in R given partial exits 40/40/20 and final exit price."""
+    """Weighted result in R given partial exits 40/40/20 and final exit price.
+    Direction-aware: profit moves opposite ways for long vs short."""
     e, sl = row["entry"], row["stop_loss"]
-    r = e - sl
+    sign = -1.0 if row.get("side") == "short" else 1.0
+    r = abs(e - sl)
+    if r == 0:
+        return 0.0
     parts = 0.0
     if row["status"] in ("tp1", "tp2"):
-        parts += 0.4 * (row["tp1"] - e) / r
+        parts += 0.4 * sign * (row["tp1"] - e) / r
     if row["status"] == "tp2":
-        parts += 0.4 * (row["tp2"] - e) / r
+        parts += 0.4 * sign * (row["tp2"] - e) / r
     remaining = {"open": 1.0, "tp1": 0.6, "tp2": 0.2}.get(row["status"], 1.0)
-    return parts + remaining * (exit_price - e) / r
+    return parts + remaining * sign * (exit_price - e) / r
 
 
 def check_outcomes():
     for row in journal.open_signals():
         try:
+            short = row.get("side") == "short"
             price_now = last_price(row["symbol"])
             hi = lo = price_now
             for c in _px.fetch_ohlcv(row["symbol"], timeframe="5m", limit=3):
                 hi, lo = max(hi, c[2]), min(lo, c[3])
 
+            # After TP1/TP2 the stop trails to breakeven (entry).
             effective_sl = row["entry"] if row["status"] in ("tp1", "tp2") else row["stop_loss"]
 
-            if lo <= effective_sl:
+            if short:
+                stop_hit = hi >= effective_sl          # price rose into the stop
+                tp_reached = lambda lvl: lo <= lvl     # price fell to a target
+            else:
+                stop_hit = lo <= effective_sl          # price fell into the stop
+                tp_reached = lambda lvl: hi >= lvl      # price rose to a target
+
+            if stop_hit:
                 event = "breakeven" if row["status"] in ("tp1", "tp2") else "stopped"
                 r_val = realized_r(row, effective_sl)
                 journal.update_status(row["id"], event, r_val, close=True)
                 telegram.send(telegram.format_outcome(row, event, r_val))
                 send_outcome_chart(row, effective_sl, r_val, event)
-            elif hi >= row["tp3"] and row["status"] == "tp2":
+            elif tp_reached(row["tp3"]) and row["status"] == "tp2":
                 r_val = realized_r(row, row["tp3"])
                 journal.update_status(row["id"], "tp3", r_val, close=True)
                 telegram.send(telegram.format_outcome(row, "tp3", r_val))
                 send_outcome_chart(row, row["tp3"], r_val, "tp3")
-            elif hi >= row["tp2"] and row["status"] == "tp1":
+            elif tp_reached(row["tp2"]) and row["status"] == "tp1":
                 journal.update_status(row["id"], "tp2")
                 telegram.send(telegram.format_outcome(row, "tp2"))
-            elif hi >= row["tp1"] and row["status"] == "open":
+            elif tp_reached(row["tp1"]) and row["status"] == "open":
                 journal.update_status(row["id"], "tp1")
                 telegram.send(telegram.format_outcome(row, "tp1"))
         except Exception:
             print(f"[outcome] error on #{row['id']}:\n{traceback.format_exc()}")
 
 
-def _norm_symbol(raw: str) -> str:
-    s = raw.strip().upper().replace("-", "/")
-    if "/" not in s:
-        s = s.removesuffix("USDT") + "/USDT" if s.endswith("USDT") else f"{s}/USDT"
-    return s
+def _resolve_symbol(raw: str):
+    """Map a user-typed symbol to ('crypto', 'BTC/USDT') or ('tv', tv_info_dict).
+    Forex/stocks/gold resolve to their TradingView config; everything else is crypto."""
+    s = raw.strip().upper().replace("-", "/").replace("/", "")
+    # Try TV non-crypto first (forex, gold, stocks)
+    for info in config.FOREX_SYMBOLS + config.STOCK_SYMBOLS:
+        if info["symbol"].upper() == s:
+            return "tv", info
+    # Also match any non-crypto in the full TV list
+    for info in config.TV_SYMBOLS:
+        if info["symbol"].upper() == s and info["screener"] != "crypto":
+            return "tv", info
+    # Crypto: normalise to ccxt pair
+    if s.endswith("USDT"):
+        base = s[:-4]
+    elif s.endswith("USDC"):
+        base = s[:-4]
+    else:
+        base = s
+    return "crypto", f"{base}/USDT"
 
 
-async def analyze_on_demand(symbol: str, chat_id=None) -> str:
-    """Run a full Claude analysis on any pair, on request, and format the report."""
+async def analyze_on_demand(symbol_raw: str, chat_id=None) -> str:
+    """Run a full Gemini analysis on any instrument (crypto/forex/stock), on request."""
     if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
-        return "⏳ Bugungi Claude tahlil limiti tugadi, ertaga urinib ko'ring."
+        return "⏳ Bugungi tahlil limiti tugadi, ertaga urinib ko'ring."
+
+    kind, target = _resolve_symbol(symbol_raw)
+
+    # ── Forex / stocks / gold via TradingView ──────────────────────────────
+    if kind == "tv":
+        from .screener_tv import get_tv_analysis, find_candidate_tv
+        from .analyzer import analyze_tv_direct
+        symbol = target["symbol"]
+        try:
+            e1h = await _tv_analysis_async(target["symbol"], target["exchange"], target["screener"], "1h")
+            e4h = await _tv_analysis_async(target["symbol"], target["exchange"], target["screener"], "4h")
+        except Exception as exc:
+            if "429" in str(exc):
+                return f"⏳ <b>{symbol}</b> — TradingView cheklovi, 1-2 daqiqadan keyin urinib ko'ring."
+            return f"❌ <b>{symbol}</b> ma'lumot olishda xato: {str(exc)[:120]}"
+        cur_price = float(e1h.indicators.get("close", 0))
+        if not cur_price:
+            return f"❌ <b>{symbol}</b> narx ma'lumoti topilmadi."
+        hint = await asyncio.to_thread(find_candidate_tv, target) or {"setup": "TV", "side": "long"}
+        journal.bump_claude_calls()
+        sig = await analyze_tv_direct(symbol, e1h, e4h, hint, journal.setup_performance(30))
+        sig["symbol"] = symbol
+        ctx_label = f"{symbol} • {target['screener'].upper()}"
+        if sig.get("signal") in ("long", "short"):
+            ok, why = risk.validate(sig, cur_price)
+            if ok:
+                sig_id = journal.add_signal(sig)
+                telegram.send(telegram.format_signal(sig, sig_id, ctx_label), chat_id=chat_id)
+                return ""
+            return (f"📊 <b>{symbol}</b> — tahlil qilindi, signal BERILMADI\n"
+                    f"Sabab: risk filtri ({why})\nIshonch: {sig.get('score', 0)}/10")
+        return (f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n"
+                f"💡 {sig.get('reason', 'kriteriylarga mos kelmadi')}\nIshonch: {sig.get('score', 0)}/10")
+
+    # ── Crypto via ccxt ────────────────────────────────────────────────────
+    symbol = target
     try:
         btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
         snap = btc_snap if symbol == "BTC/USDT" else snapshot(
@@ -331,16 +404,17 @@ async def analyze_on_demand(symbol: str, chat_id=None) -> str:
     except Exception as exc:
         return f"❌ <b>{symbol}</b> ma'lumotini olishda xato: {str(exc)[:120]}"
 
-    hint = screener.find_candidate(snap) or "A"  # force analysis even without a screener trigger
+    hint = screener.find_candidate(snap) or {"setup": "A", "side": "long"}
     journal.bump_claude_calls()
     sig = await analyze(snap, hint, btc_snap, journal.setup_performance(30))
     ctx_str = market_context(btc_snap)
 
-    if sig.get("signal") == "long":
+    if sig.get("signal") in ("long", "short"):
         ok, why = risk.validate(sig, last_price(symbol))
         if ok:
             sig_id = journal.add_signal(sig)
-            kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
+            can_auto = config.can_autotrade_side(sig.get("signal", "long"))
+            kb = telegram.execute_keyboard(sig_id, allow_auto=can_auto) if config.trading_enabled() else None
             telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb, chat_id=chat_id)
             send_chart(symbol, snap, sig, chat_id=chat_id)
             return ""  # already sent as a full signal + chart
@@ -369,24 +443,25 @@ async def handle_command(text: str, chat_id=None):
                       reply_markup=telegram.coins_keyboard(), chat_id=chat_id)
     elif cmd in ("analyze", "analiz", "a"):
         if not arg:
-            telegram.send("Foydalanish: <code>/analyze BTC</code>",
+            telegram.send("Foydalanish: <code>/analyze BTC</code> yoki <code>/analyze EURUSD</code>",
                           reply_markup=telegram.main_keyboard(), chat_id=chat_id)
             return
-        symbol = _norm_symbol(arg)
-        telegram.send(f"🔍 <b>{symbol}</b> tahlil qilinmoqda...", chat_id=chat_id)
-        msg = await analyze_on_demand(symbol, chat_id=chat_id)
+        telegram.send(f"🔍 <b>{arg.upper()}</b> tahlil qilinmoqda...", chat_id=chat_id)
+        msg = await analyze_on_demand(arg, chat_id=chat_id)
         if msg:
             telegram.send(msg, chat_id=chat_id)
     elif cmd in ("balance", "balans", "portfel"):
-        telegram.send(
-            "💼 <b>Binance portfel</b>\n\n"
-            "⚠️ Server Binance.bh ga kira olmaydi (WAF bloki).\n"
-            "Balansni ko'rish uchun quyidagi tugmani bosing 👇",
-            reply_markup={"inline_keyboard": [[
-                {"text": "🔗 Binance.bh ni ochish", "url": "https://www.binance.bh/en/my/dashboard"}
-            ]]},
-            chat_id=chat_id
-        )
+        if not config.trading_enabled():
+            telegram.send(
+                "💼 <b>Binance portfel</b>\n\n"
+                "⚠️ Binance API key sozlanmagan (signal-only rejim).\n"
+                "Avto/qo'lda savdo uchun <code>BINANCE_API_KEY</code> va "
+                "<code>BINANCE_API_SECRET</code> qo'shing (Futures ruxsati bilan).",
+                chat_id=chat_id)
+            return
+        from . import exchange_trade
+        data = await asyncio.to_thread(exchange_trade.portfolio)
+        telegram.send(telegram.format_portfolio(data), chat_id=chat_id)
     elif cmd in ("stats", "stat"):
         telegram.send(telegram.format_weekly(journal.weekly_stats()), chat_id=chat_id)
     elif cmd in ("open", "ochiq"):
@@ -413,7 +488,7 @@ async def handle_command(text: str, chat_id=None):
         signal_type = sig.get("signal", "none")
         score = sig.get("score", 0)
         reason = sig.get("reason", "")
-        if signal_type == "long":
+        if signal_type in ("long", "short"):
             from . import risk
             ok, why = risk.validate(sig, cur_price)
             if ok:
@@ -422,7 +497,7 @@ async def handle_command(text: str, chat_id=None):
                 telegram.send(f"✅ Signal yaratildi #{sig_id}", chat_id=chat_id)
             else:
                 telegram.send(
-                    f"📊 <b>TEST {sym}</b> — Gemini LONG dedi lekin risk gate o'tmadi\n"
+                    f"📊 <b>TEST {sym}</b> — Gemini {signal_type.upper()} dedi lekin risk gate o'tmadi\n"
                     f"Sabab: {why}\nScore: {score}/10\n💡 {reason}", chat_id=chat_id)
         else:
             telegram.send(
@@ -467,58 +542,9 @@ async def telegram_poller():
                         cb_chat = cb.get("message", {}).get("chat", {}).get("id")
                         telegram.send(f"🔍 <b>{symbol}</b> tahlil qilinmoqda...", chat_id=cb_chat)
                         try:
-                            if action == "coin" and "/" in symbol:
-                                # Crypto via ccxt
-                                btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-                                snap = btc_snap if symbol == "BTC/USDT" else snapshot(symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-                                hint = screener.find_candidate(snap) or "A"
-                                journal.bump_claude_calls()
-                                sig = await analyze(snap, hint, btc_snap, journal.setup_performance(30))
-                                ctx_str = market_context(btc_snap)
-                                cur_price = last_price(symbol)
-                                if sig.get("signal") == "long":
-                                    ok, why = risk.validate(sig, cur_price)
-                                    if ok:
-                                        sig_id = journal.add_signal(sig)
-                                        kb = telegram.execute_keyboard(sig_id) if config.trading_enabled() else None
-                                        telegram.send(telegram.format_signal(sig, sig_id, ctx_str), reply_markup=kb, chat_id=cb_chat)
-                                        send_chart(symbol, snap, sig, chat_id=cb_chat)
-                                    else:
-                                        send_chart(symbol, snap, None, chat_id=cb_chat)
-                                        telegram.send(f"📊 <b>{symbol}</b> — signal berilmadi\nSabab: {why}\n🌐 {ctx_str}", chat_id=cb_chat)
-                                else:
-                                    send_chart(symbol, snap, None, chat_id=cb_chat)
-                                    telegram.send(f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n💡 {sig.get('reason', '')}\nIshonch: {sig.get('score', 0)}/10\n🌐 {ctx_str}", chat_id=cb_chat)
-                            else:
-                                # Forex/Stocks via tradingview-ta
-                                tv_info = _find_tv_info(symbol)
-                                if not tv_info:
-                                    telegram.send(f"❌ {symbol} — ma'lumot topilmadi", chat_id=cb_chat)
-                                    continue
-                                from .screener_tv import get_tv_analysis
-                                from .analyzer import analyze_tv_direct
-                                try:
-                                    e1h = await _tv_analysis_async(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "1h")
-                                    e4h = await _tv_analysis_async(tv_info["symbol"], tv_info["exchange"], tv_info["screener"], "4h")
-                                except Exception as _tv_exc:
-                                    if "429" in str(_tv_exc):
-                                        telegram.send(f"⏳ <b>{symbol}</b> — TradingView so'rovlar cheklandi, 1-2 daqiqadan keyin qayta bosing.", chat_id=cb_chat)
-                                    else:
-                                        telegram.send(f"❌ <b>{symbol}</b> ma'lumot olishda xato: {str(_tv_exc)[:100]}", chat_id=cb_chat)
-                                    continue
-                                cur_price = float(e1h.indicators.get("close", 0))
-                                journal.bump_claude_calls()
-                                sig = await analyze_tv_direct(symbol, e1h, e4h, "TV", journal.setup_performance(30))
-                                sig["symbol"] = symbol
-                                if sig.get("signal") == "long":
-                                    ok, why = risk.validate(sig, cur_price)
-                                    if ok:
-                                        sig_id = journal.add_signal(sig)
-                                        telegram.send(telegram.format_signal(sig, sig_id, f"{symbol} • {tv_info['screener'].upper()}"), chat_id=cb_chat)
-                                    else:
-                                        telegram.send(f"📊 <b>{symbol}</b> — signal berilmadi\nSabab: {why}", chat_id=cb_chat)
-                                else:
-                                    telegram.send(f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n💡 {sig.get('reason', '')}\nIshonch: {sig.get('score', 0)}/10", chat_id=cb_chat)
+                            msg = await analyze_on_demand(symbol, chat_id=cb_chat)
+                            if msg:
+                                telegram.send(msg, chat_id=cb_chat)
                         except Exception:
                             telegram.send(f"❌ <b>{symbol}</b> tahlilida xato — qayta urinib ko'ring.", chat_id=cb_chat)
                             print(f"[coin-cb] error {symbol}:\n{traceback.format_exc()}")
@@ -542,7 +568,7 @@ async def webhook_processor():
             symbol        = item["symbol"]
             exchange      = item["exchange"]
             screener_name = item["screener"]
-            hint          = item.get("setup", "TV")
+            hint          = {"setup": item.get("setup", "TV"), "side": item.get("side", "long")}
 
             tv_sym = {"symbol": symbol, "exchange": exchange, "screener": screener_name}
             ccxt_symbol = tv_symbol_to_ccxt(tv_sym)

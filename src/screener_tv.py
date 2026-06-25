@@ -36,7 +36,7 @@ def get_tv_analysis(symbol: str, exchange: str, screener: str, timeframe: str = 
     return handler.get_analysis()
 
 
-def find_candidate_tv(tv_sym: dict) -> str | None:
+def find_candidate_tv(tv_sym: dict):
     """
     tv_sym format:
       {"symbol": "BTCUSDT", "exchange": "BINANCE", "screener": "crypto"}
@@ -45,8 +45,11 @@ def find_candidate_tv(tv_sym: dict) -> str | None:
     For forex:
       {"symbol": "EURUSD", "exchange": "FX", "screener": "forex"}
 
-    Returns 'A', 'B', 'TV', or None.
+    Returns a dict {"setup": "A"|"B"|"TV", "side": "long"|"short"} or None.
+    Detects both LONG (uptrend) and SHORT (downtrend) candidates.
     """
+    from . import config
+
     try:
         e   = get_tv_analysis(tv_sym["symbol"], tv_sym["exchange"], tv_sym["screener"], "1h")
         ctx = get_tv_analysis(tv_sym["symbol"], tv_sym["exchange"], tv_sym["screener"], "4h")
@@ -72,28 +75,38 @@ def find_candidate_tv(tv_sym: dict) -> str | None:
     ema50_4h  = ci.get("EMA50",  0)
     ema200_4h = ci.get("EMA200", 0)
 
-    uptrend_4h = close_4h > ema200_4h and ema50_4h > ema200_4h
+    uptrend_4h   = close_4h > ema200_4h and ema50_4h > ema200_4h
+    downtrend_4h = close_4h < ema200_4h and ema50_4h < ema200_4h
 
-    # --- Setup A: pullback to EMA50 zone in 4H uptrend ---
+    buy_1h  = e.summary.get("BUY", 0)
+    sell_1h = e.summary.get("SELL", 0)
+    rec_1h  = e.summary.get("RECOMMENDATION", "")
+    buy_4h  = ctx.summary.get("BUY", 0)
+    sell_4h = ctx.summary.get("SELL", 0)
+    rec_4h  = ctx.summary.get("RECOMMENDATION", "")
+
+    # ── LONG candidates (uptrend) ──────────────────────────────────────────
     if uptrend_4h and ema50_1h > 0 and atr_1h > 0:
         near_ema50 = abs(close_1h - ema50_1h) <= 1.2 * atr_1h
         rsi_reset  = rsi_1h < 55 and stoch_k < 55
         if near_ema50 and rsi_reset:
-            return "A"
-
-    # --- Setup B: TV multi-indicator BUY alignment + uptrend ---
-    if uptrend_4h:
-        buy_1h = e.summary.get("BUY", 0)
-        rec_1h = e.summary.get("RECOMMENDATION", "")
-        if buy_1h >= 10 and rec_1h in ("STRONG_BUY", "BUY") and rsi_1h < 70:
-            return "B"
-
-    # --- Setup TV: 4H STRONG_BUY (works even without strict uptrend) ---
-    buy_4h = ctx.summary.get("BUY", 0)
-    rec_4h = ctx.summary.get("RECOMMENDATION", "")
-    buy_1h = e.summary.get("BUY", 0)
+            return {"setup": "A", "side": "long"}
+    if uptrend_4h and buy_1h >= 10 and rec_1h in ("STRONG_BUY", "BUY") and rsi_1h < 70:
+        return {"setup": "B", "side": "long"}
     if rec_4h == "STRONG_BUY" and buy_4h >= 12 and buy_1h >= 8 and rsi_1h < 65:
-        return "TV"
+        return {"setup": "TV", "side": "long"}
+
+    # ── SHORT candidates (downtrend) — mirror logic ────────────────────────
+    if config.ALLOW_SHORTS:
+        if downtrend_4h and ema50_1h > 0 and atr_1h > 0:
+            near_ema50 = abs(close_1h - ema50_1h) <= 1.2 * atr_1h
+            rsi_reset  = rsi_1h > 45 and stoch_k > 45  # bounce up into resistance
+            if near_ema50 and rsi_reset:
+                return {"setup": "A", "side": "short"}
+        if downtrend_4h and sell_1h >= 10 and rec_1h in ("STRONG_SELL", "SELL") and rsi_1h > 30:
+            return {"setup": "B", "side": "short"}
+        if rec_4h == "STRONG_SELL" and sell_4h >= 12 and sell_1h >= 8 and rsi_1h > 35:
+            return {"setup": "TV", "side": "short"}
 
     return None
 

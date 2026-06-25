@@ -33,30 +33,34 @@ def _snap_at(e, ctx, i, ts):
             "resistance_4h": res4, "support_4h": sup4}
 
 
-def _simulate(e, i, entry, sl, tp1, tp2, tp3):
-    """Walk forward; return realized R using partial exits + breakeven-after-TP1."""
-    r = entry - sl
+def _simulate(e, i, entry, sl, tp1, tp2, tp3, side="long"):
+    """Walk forward; return realized R using partial exits + breakeven-after-TP1.
+    Direction-aware: profit/stop directions flip for shorts."""
+    sign = -1.0 if side == "short" else 1.0
+    r = abs(entry - sl)
     status = "open"
     for j in range(i + 1, min(i + 1 + LOOKFORWARD, len(e))):
         hi, lo = float(e["high"].iloc[j]), float(e["low"].iloc[j])
         eff_sl = entry if status in ("tp1", "tp2") else sl
-        if lo <= eff_sl:
+        stop_hit = (hi >= eff_sl) if side == "short" else (lo <= eff_sl)
+        reached = (lambda lvl: lo <= lvl) if side == "short" else (lambda lvl: hi >= lvl)
+        if stop_hit:
             if status == "open":
                 return -1.0, "stopped", j - i
-            parts = 0.4 * (tp1 - entry) / r
+            parts = 0.4 * sign * (tp1 - entry) / r
             if status == "tp2":
-                parts += 0.4 * (tp2 - entry) / r
+                parts += 0.4 * sign * (tp2 - entry) / r
             rem = {"tp1": 0.6, "tp2": 0.2}[status]
-            return parts + rem * (eff_sl - entry) / r, "breakeven", j - i
-        if hi >= tp3 and status == "tp2":
-            return (0.4 * (tp1 - entry) + 0.4 * (tp2 - entry) + 0.2 * (tp3 - entry)) / r, "tp3", j - i
-        if hi >= tp2 and status == "tp1":
+            return parts + rem * sign * (eff_sl - entry) / r, "breakeven", j - i
+        if reached(tp3) and status == "tp2":
+            return sign * (0.4 * (tp1 - entry) + 0.4 * (tp2 - entry) + 0.2 * (tp3 - entry)) / r, "tp3", j - i
+        if reached(tp2) and status == "tp1":
             status = "tp2"
-        elif hi >= tp1 and status == "open":
+        elif reached(tp1) and status == "open":
             status = "tp1"
     # timed out — mark to last close
     last = float(e["close"].iloc[min(i + LOOKFORWARD, len(e) - 1)])
-    return (last - entry) / r, "timeout", LOOKFORWARD
+    return sign * (last - entry) / r, "timeout", LOOKFORWARD
 
 
 def backtest_symbol(symbol: str, days: int) -> list[dict]:
@@ -74,12 +78,20 @@ def backtest_symbol(symbol: str, days: int) -> list[dict]:
         hint = screener.find_candidate(snap)
         if not hint:
             continue
+        setup, side = hint["setup"], hint["side"]
         entry = float(e["close"].iloc[i])
         atr = float(e["atr"].iloc[i])
-        sl = entry - ATR_STOP_MULT * atr
-        r = entry - sl
-        rr, outcome, held = _simulate(e, i, entry, sl, entry + 1.5 * r, entry + 2.5 * r, entry + 4 * r)
-        trades.append({"symbol": symbol, "setup": hint, "r": rr, "outcome": outcome, "bars_held": held})
+        if side == "short":
+            sl = entry + ATR_STOP_MULT * atr
+            r = sl - entry
+            tp1, tp2, tp3 = entry - 1.5 * r, entry - 2.5 * r, entry - 4 * r
+        else:
+            sl = entry - ATR_STOP_MULT * atr
+            r = entry - sl
+            tp1, tp2, tp3 = entry + 1.5 * r, entry + 2.5 * r, entry + 4 * r
+        rr, outcome, held = _simulate(e, i, entry, sl, tp1, tp2, tp3, side)
+        trades.append({"symbol": symbol, "setup": f"{setup}-{side}", "r": rr,
+                       "outcome": outcome, "bars_held": held})
         cooldown = COOLDOWN_BARS
     return trades
 

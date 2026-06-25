@@ -1,14 +1,20 @@
-"""Authenticated Binance spot trading. Optional — only active when API keys are set.
+"""Authenticated Binance trading. Optional — only active when API keys are set.
+
+Two modes (config.BINANCE_MARKET):
+  - "future"  USDT-M perpetuals. Supports LONG and SHORT. Uses leverage.
+              TP/SL placed as reduceOnly STOP_MARKET / TAKE_PROFIT_MARKET orders that
+              live on Binance's servers, so they stay active even if the bot goes offline.
+  - "spot"    Spot market, LONG only (BUY + OCO SELL). Shorts are rejected.
 
 SAFETY:
-- Spot only, BUY to open, OCO SELL (take-profit + stop-loss) to protect.
-- Position size = RISK_PER_TRADE of quote balance, hard-capped by MAX_TRADE_QUOTE.
+- Position size targets ~RISK_PER_TRADE of the quote balance at the stop, hard-capped
+  by MAX_TRADE_QUOTE (margin) × leverage in notional terms.
 - Withdrawals are never called. Create the API key WITHOUT withdrawal permission.
+- Futures key needs "Enable Futures" permission.
 
-NOTE: api.binance.com is geo-blocked from some datacenters (HTTP 451). If the host
-cannot reach Binance, execution returns an error string and posts it to Telegram —
-run the executor from a Binance-reachable location. The OCO order, once placed, lives
-on Binance's servers, so the stop-loss stays active even if this bot goes offline.
+NOTE: Binance is geo-blocked from some datacenters (HTTP 451). Run the executor from a
+Binance-reachable location (e.g. a Hetzner EU server). Data fetching uses the public
+vision endpoint and is not affected.
 """
 import ccxt
 
@@ -20,13 +26,18 @@ _client = None
 def client():
     global _client
     if _client is None:
-        _client = ccxt.binance({
+        opts = {
             "apiKey": config.BINANCE_API_KEY,
             "secret": config.BINANCE_API_SECRET,
             "enableRateLimit": True,
-            "options": {"defaultType": "spot", "adjustForTimeDifference": True},
-            "hostname": config.BINANCE_HOSTNAME,
-        })
+            "options": {
+                "defaultType": config.BINANCE_MARKET,  # "future" or "spot"
+                "adjustForTimeDifference": True,
+            },
+        }
+        if config.BINANCE_HOSTNAME:
+            opts["hostname"] = config.BINANCE_HOSTNAME
+        _client = ccxt.binance(opts)
     return _client
 
 
@@ -36,8 +47,7 @@ def quote_balance(quote: str = "USDT") -> float:
 
 
 def portfolio() -> dict:
-    """Read-only snapshot of spot balances valued in USDT. Works only where Binance
-    is reachable (the Mac); returns a 451 note otherwise."""
+    """Read-only snapshot of balances valued in USDT. Returns a 451 note where blocked."""
     from .data import _exchange as price_src
     try:
         bal = client().fetch_balance()
@@ -45,7 +55,7 @@ def portfolio() -> dict:
         msg = str(exc)
         if "451" in msg or "restricted location" in msg:
             return {"ok": False, "error": "Binance bu serverdan bloklangan (451). "
-                    "Balansni ko'rish uchun botni Mac'da ishga tushiring."}
+                    "Balansni ko'rish uchun botni Binance'ga ulanadigan serverda ishga tushiring."}
         return {"ok": False, "error": msg[:200]}
 
     holdings, total = [], 0.0
@@ -65,55 +75,109 @@ def portfolio() -> dict:
     return {"ok": True, "holdings": holdings, "total_usd": total}
 
 
-def _round_amount(symbol: str, amount: float) -> float:
-    return float(client().amount_to_precision(symbol, amount))
+def _sizing(free: float, entry: float, sl: float) -> float:
+    """Notional (in quote) so a stop-out loses ~RISK_PER_TRADE of balance, bounded by caps."""
+    stop_frac = abs(entry - sl) / entry
+    if stop_frac <= 0:
+        return 0.0
+    risk_quote = min(free * config.RISK_PER_TRADE, config.MAX_TRADE_QUOTE)
+    lev = max(1, config.LEVERAGE) if config.BINANCE_MARKET == "future" else 1
+    max_notional = config.MAX_TRADE_QUOTE * lev
+    notional = risk_quote / stop_frac
+    return min(notional, free * lev, max_notional)
 
 
-def _round_price(symbol: str, price: float) -> float:
-    return float(client().price_to_precision(symbol, price))
-
-
-def execute_signal(sig: dict) -> dict:
-    """Market-buy then place an OCO (TP2 / SL) sell. Returns a result dict."""
+def _execute_spot_long(sig: dict) -> dict:
+    """Spot market BUY + OCO (TP2/SL) sell. LONG only."""
     ex = client()
     symbol = sig["symbol"]
     quote = symbol.split("/")[1]
     entry, sl, tp2 = float(sig["entry"]), float(sig["stop_loss"]), float(sig["tp2"])
 
+    free = quote_balance(quote)
+    notional = _sizing(free, entry, sl)
+    if notional < 10:
+        return {"ok": False, "error": f"notional {notional:.2f} {quote} < 10 minimum"}
+    amount = float(ex.amount_to_precision(symbol, notional / entry))
+
+    buy = ex.create_order(symbol, "market", "buy", amount)
+    filled = float(buy.get("average") or buy.get("price") or entry)
+    got = float(buy.get("filled") or amount)
+
     try:
-        free = quote_balance(quote)
-        risk_quote = min(free * config.RISK_PER_TRADE, config.MAX_TRADE_QUOTE)
-        # size so that a stop-out loses ~risk_quote; bounded by available balance
-        stop_frac = (entry - sl) / entry
-        notional = min(risk_quote / stop_frac, free, config.MAX_TRADE_QUOTE)
-        if notional < 10:  # Binance min notional
-            return {"ok": False, "error": f"notional {notional:.2f} {quote} < 10 minimum"}
-        amount = _round_amount(symbol, notional / entry)
+        oco = ex.private_post_order_oco({
+            "symbol": ex.market_id(symbol),
+            "side": "SELL",
+            "quantity": ex.amount_to_precision(symbol, got),
+            "price": ex.price_to_precision(symbol, tp2),
+            "stopPrice": ex.price_to_precision(symbol, sl),
+            "stopLimitPrice": ex.price_to_precision(symbol, sl * 0.999),
+            "stopLimitTimeInForce": "GTC",
+        })
+        oco_id = str(oco.get("orderListId", "")) or None
+    except Exception as exc:
+        return {"ok": True, "oco": False, "qty": got, "fill": filled,
+                "warn": f"OCO qo'yilmadi: {exc}"}
+    return {"ok": True, "oco": True, "qty": got, "fill": filled, "oco_id": oco_id}
 
-        buy = ex.create_order(symbol, "market", "buy", amount)
-        filled = float(buy.get("average") or buy.get("price") or entry)
-        got = float(buy.get("filled") or amount)
 
-        oco_id = None
-        try:
-            oco = ex.private_post_order_oco({
-                "symbol": ex.market_id(symbol),
-                "side": "SELL",
-                "quantity": ex.amount_to_precision(symbol, got),
-                "price": ex.price_to_precision(symbol, tp2),            # take-profit limit
-                "stopPrice": ex.price_to_precision(symbol, sl),          # stop trigger
-                "stopLimitPrice": ex.price_to_precision(symbol, sl * 0.999),
-                "stopLimitTimeInForce": "GTC",
-            })
-            oco_id = str(oco.get("orderListId", "")) or None
-        except Exception as exc:  # entry filled but OCO failed — must warn loudly
-            return {"ok": True, "oco": False, "qty": got, "fill": filled,
-                    "warn": f"OCO qo'yilmadi: {exc}"}
+def _execute_futures(sig: dict) -> dict:
+    """Futures market open (BUY=long / SELL=short) + reduceOnly TP & SL. Both directions."""
+    ex = client()
+    raw = sig["symbol"]                         # e.g. "BTC/USDT"
+    symbol = raw if ":" in raw else f"{raw}:{raw.split('/')[1]}"  # ccxt perp id "BTC/USDT:USDT"
+    quote = raw.split("/")[1]
+    short = sig.get("signal") == "short" or sig.get("side") == "short"
+    entry, sl, tp2 = float(sig["entry"]), float(sig["stop_loss"]), float(sig["tp2"])
 
-        return {"ok": True, "oco": True, "qty": got, "fill": filled, "oco_id": oco_id}
+    try:
+        ex.set_leverage(config.LEVERAGE, symbol)
+    except Exception as exc:
+        print(f"[trade] set_leverage warning {symbol}: {exc}")
+
+    free = quote_balance(quote)
+    notional = _sizing(free, entry, sl)
+    if notional < 5:
+        return {"ok": False, "error": f"notional {notional:.2f} {quote} < 5 minimum (futures)"}
+    amount = float(ex.amount_to_precision(symbol, notional / entry))
+
+    open_side = "sell" if short else "buy"
+    close_side = "buy" if short else "sell"
+
+    order = ex.create_order(symbol, "market", open_side, amount)
+    filled = float(order.get("average") or order.get("price") or entry)
+    got = float(order.get("filled") or amount)
+
+    warn = None
+    try:
+        # Stop-loss (reduceOnly)
+        ex.create_order(symbol, "STOP_MARKET", close_side, got, None,
+                        {"stopPrice": ex.price_to_precision(symbol, sl), "reduceOnly": True})
+        # Take-profit at TP2 (reduceOnly)
+        ex.create_order(symbol, "TAKE_PROFIT_MARKET", close_side, got, None,
+                        {"stopPrice": ex.price_to_precision(symbol, tp2), "reduceOnly": True})
+    except Exception as exc:
+        warn = f"TP/SL qo'yilmadi: {exc}"
+
+    res = {"ok": True, "oco": warn is None, "qty": got, "fill": filled,
+           "oco_id": None, "side": "short" if short else "long", "leverage": config.LEVERAGE}
+    if warn:
+        res["warn"] = warn
+    return res
+
+
+def execute_signal(sig: dict) -> dict:
+    """Place a real order for a signal. Futures (long/short) or spot (long only)."""
+    short = sig.get("signal") == "short" or sig.get("side") == "short"
+    try:
+        if config.BINANCE_MARKET == "future":
+            return _execute_futures(sig)
+        if short:
+            return {"ok": False, "error": "SHORT spot'da imkonsiz. BINANCE_MARKET=future qiling."}
+        return _execute_spot_long(sig)
     except ccxt.BaseError as exc:
         msg = str(exc)
         if "451" in msg or "restricted location" in msg:
             return {"ok": False, "error": "Binance ushbu serverdan bloklangan (451). "
-                    "Savdoni Binance'ga ulanadigan joydan ishga tushiring."}
+                    "Savdoni Binance'ga ulanadigan serverdan (Hetzner EU) ishga tushiring."}
         return {"ok": False, "error": msg[:300]}

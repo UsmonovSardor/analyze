@@ -1,5 +1,14 @@
 # Risk Rules
 
+## Direction note (long vs short)
+
+All rules below are written for LONGS. For a SHORT, mirror everything:
+- R = stop_loss − entry  (stop is ABOVE entry).
+- TP1 = entry − 1.5R, TP2 = entry − 2.5R, TP3 = entry − 4R (or nearest 4h SUPPORT, the closer one).
+- SL goes ABOVE the structural invalidation (bounce swing high / reclaimed level).
+- Ordering: stop_loss > entry > tp1 > tp2 > tp3.
+- "Resistance above" becomes "support below" when checking for room.
+
 ## Stop-Loss Placement (structure-based, from Brooks + Nison)
 
 - Place SL below the structural invalidation point:
@@ -70,6 +79,6 @@ Rules:
 
 ## Confidence Score
 
-- Report confidence as the confluence score (0–10). Signals below 7 are never emitted.
-- Score 7 = acceptable. Score 8+ = preferred. Score 9–10 = high-conviction.
+- Report confidence as the confluence score (0–10). Signals below 6 are never emitted.
+- Score 6 = acceptable (lower conviction). Score 8+ = preferred. Score 9–10 = high-conviction.
 - When recent setup performance (fed back via performance note) shows win rate < 40% for this setup type: raise minimum score to 8.

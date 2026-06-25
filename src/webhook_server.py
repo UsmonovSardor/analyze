@@ -63,10 +63,10 @@ async def tradingview_webhook(request: Request):
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
 
-    if action != "long":
-        return JSONResponse({"status": "ignored", "reason": "only long signals processed"})
+    if action not in ("long", "short"):
+        return JSONResponse({"status": "ignored", "reason": "action must be long or short"})
 
-    print(f"[webhook] {datetime.now():%H:%M:%S} TV alert: {exchange}:{symbol} setup={setup}")
+    print(f"[webhook] {datetime.now():%H:%M:%S} TV alert: {exchange}:{symbol} setup={setup} {action}")
 
     if _signal_queue is not None:
         await _signal_queue.put({
@@ -74,6 +74,7 @@ async def tradingview_webhook(request: Request):
             "exchange": exchange,
             "screener": screener,
             "setup":    setup,
+            "side":     action,
             "source":   "tradingview_webhook",
         })
         return JSONResponse({"status": "queued", "symbol": symbol})

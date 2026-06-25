@@ -52,7 +52,8 @@ def render(symbol: str, snap: dict, sig: dict | None = None, result: dict | None
     title = f"{symbol}  ·  1h"
 
     # signal annotations
-    if sig and sig.get("signal") == "long":
+    if sig and sig.get("signal") in ("long", "short"):
+        is_short = sig.get("signal") == "short"
         entry, sl = float(sig["entry"]), float(sig["stop_loss"])
         tp1, tp2, tp3 = float(sig["tp1"]), float(sig["tp2"]), float(sig["tp3"])
         xr = len(e) - 1
@@ -63,20 +64,23 @@ def render(symbol: str, snap: dict, sig: dict | None = None, result: dict | None
                     fontsize=9, va="center", ha="left", fontweight="bold",
                     bbox=dict(boxstyle="round,pad=0.15", fc="#0e1117", ec=color, alpha=0.85))
 
-        # shaded profit & risk zones
-        ax.axhspan(entry, tp3, color="#26a69a", alpha=0.07, zorder=0)
-        ax.axhspan(sl, entry, color="#ef5350", alpha=0.10, zorder=0)
+        # shaded profit (toward TP3) & risk (toward SL) zones — works for both directions
+        ax.axhspan(min(entry, tp3), max(entry, tp3), color="#26a69a", alpha=0.07, zorder=0)
+        ax.axhspan(min(entry, sl), max(entry, sl), color="#ef5350", alpha=0.10, zorder=0)
         lvl(entry, "#ffffff", "KIRISH (Entry)", lw=2)
         lvl(sl, "#ef5350", "STOP", ls="--")
         lvl(tp1, "#26a69a", "TP1", lw=1.2, ls="--")
         lvl(tp2, "#26a69a", "TP2", lw=1.2, ls="--")
         lvl(tp3, "#26a69a", "TP3", lw=1.4)
-        # entry arrow at the latest bar
-        ax.annotate("KIRISH", xy=(xr, entry), xytext=(xr - 14, entry - (entry - sl) * 2.2),
+        # entry arrow at the latest bar — points the trade direction
+        arrow_label = "SOTISH" if is_short else "KIRISH"
+        y_off = (sl - entry) * 2.2 if is_short else -(entry - sl) * 2.2
+        ax.annotate(arrow_label, xy=(xr, entry), xytext=(xr - 14, entry + y_off),
                     color="#ffffff", fontsize=11, fontweight="bold", ha="center",
                     arrowprops=dict(arrowstyle="->", color="#ffffff", lw=2))
         meta_setup = sig.get("setup", "")
-        title = f"{symbol}  ·  1h  ·  LONG (Setup {meta_setup}, {sig.get('score')}/10)"
+        direction = "SHORT" if is_short else "LONG"
+        title = f"{symbol}  ·  1h  ·  {direction} (Setup {meta_setup}, {sig.get('score')}/10)"
 
         # closed-trade outcome overlay
         if result:

@@ -66,11 +66,29 @@ Entry conditions (1h), ALL required:
 
 **Regime 4 — High-Volatility Chop**: Huge wicks, ATR spiking > 2× normal, no structure, EMAs tangled. → **NOTHING IS ALLOWED. Reject everything.** (Livermore: "There are times when I won't do anything. Not even consider a trade.")
 
-**Regime 5 — Downtrend**: Price below EMA200, EMA50 < EMA200. → **Hard reject all longs.** (Nison: "An important principle is to place a new position based on a reversal signal ONLY if that signal is in the direction of the major trend.")
+**Regime 5 — Bear Trend / Downtrend**: Price below EMA200, EMA50 < EMA200. → **Hard reject all longs. Look for SHORT setups (A or B short) instead**, trading WITH the down-trend. (Nison: "place a new position based on a reversal signal ONLY if that signal is in the direction of the major trend.")
 
 ---
 
-## Confluence Scorecard (need ≥ 7 to pass)
+## Short Setups (mirror image — only in a 4h DOWNTREND)
+
+Both setups apply symmetrically to the short side. Everything flips:
+
+- **Setup A short (bounce to EMA50 in a downtrend)**: 4h price below EMA200 and EMA50 < EMA200.
+  Price bounces UP into the EMA50 zone (±1.0×ATR) or a prior breakdown level. RSI rallies toward
+  55–65 then turns DOWN. Entry on a bearish confirmation candle (shooting star, bearish engulfing,
+  evening star, strong bear trend bar). SL ABOVE the bounce swing high. Targets below.
+- **Setup B short (range breakdown + retest)**: price breaks BELOW a ≥30-bar range low on volume
+  ≥ 1.5× average, then retests the broken level from below. Enter on a small bull bar / doji that
+  fails to reclaim the level. SL above the broken level. A failed breakdown (price reclaims the range
+  low) is a bull trap against you — do NOT enter.
+
+For shorts, "BTC context" means BTC 4h should be neutral-to-bearish (don't short alts into a strong
+BTC bull). All other rejection rules apply with direction reversed.
+
+---
+
+## Confluence Scorecard (need ≥ 6 to pass)
 
 | # | Factor | Points | How to judge |
 |---|--------|--------|--------------|
@@ -82,7 +100,8 @@ Entry conditions (1h), ALL required:
 | 6 | **Clean room above** (nearest resistance ≥ 2R away from entry) | 1 | Major resistance < 1R = reject entire trade |
 | 7 | **Candle quality** (hammer/engulfing/morning star/strong bull bar at the exact entry level) | 1 | Per candlestick-patterns.md |
 
-Score every factor explicitly. State the exact points for each. A score < 7 = reject without exception.
+Score every factor explicitly. State the exact points for each. A score < 6 = reject without exception.
+For shorts, score each factor as its mirror (trend DOWN aligned, breakdown volume, RSI rolling over, etc.).
 
 **From Market Wizards**: "Risk control is the #1 common denominator among ALL top traders." A setup with 6/10 that looks amazing is still a 6/10. Do not negotiate with the minimum.
 

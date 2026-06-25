@@ -72,9 +72,17 @@ def _performance_note(perf: dict) -> str:
             "setups, demand higher confluence there ===\n" + "\n".join(rows) + "\n")
 
 
-def build_prompt(snap, setup_hint: str, btc_snap, perf: dict | None = None, short: bool = False) -> str:
+def _hint_str(setup_hint) -> tuple[str, str]:
+    """Accept either a string ('A') or a dict {'setup','side'}; return (setup, side)."""
+    if isinstance(setup_hint, dict):
+        return setup_hint.get("setup", "A"), setup_hint.get("side", "long")
+    return (setup_hint or "A"), "long"
+
+
+def build_prompt(snap, setup_hint, btc_snap, perf: dict | None = None, short: bool = False) -> str:
     e1h, e4h, ebtc = (30, 20, 15) if short else (60, 50, 30)
-    return f"""Analyze this candidate setup. Screener hint: Setup {setup_hint} (verify it yourself, the hint may be wrong).
+    setup, side = _hint_str(setup_hint)
+    return f"""Analyze this candidate setup. Screener hint: Setup {setup}, direction {side.upper()} (verify it yourself, the hint may be wrong).
 {_performance_note(perf or {})}
 SYMBOL: {snap['symbol']}
 
@@ -107,8 +115,10 @@ def _parse_json(text: str, symbol: str) -> dict:
         return {"signal": "none", "symbol": symbol, "reason": "invalid JSON", "score": 0}
 
 
-async def analyze_tv_direct(symbol: str, e1h, e4h, setup_hint: str, perf: dict | None = None) -> dict:
+async def analyze_tv_direct(symbol: str, e1h, e4h, setup_hint, perf: dict | None = None) -> dict:
     """Analyze any instrument (forex, stocks, indices) using TradingView indicator snapshot."""
+    setup, side = _hint_str(setup_hint)
+
     def fmt_ta(a) -> str:
         i = a.indicators
         s = a.summary
@@ -122,7 +132,7 @@ async def analyze_tv_direct(symbol: str, e1h, e4h, setup_hint: str, perf: dict |
             f"TV Rec: {s.get('RECOMMENDATION','?')} (BUY={s.get('BUY',0)} SELL={s.get('SELL',0)})"
         )
 
-    prompt = f"""Analyze this trading setup. Screener hint: Setup {setup_hint} (verify yourself).
+    prompt = f"""Analyze this trading setup. Screener hint: Setup {setup}, direction {side.upper()} (verify yourself).
 {_performance_note(perf or {})}
 SYMBOL: {symbol}
 
@@ -133,6 +143,7 @@ SYMBOL: {symbol}
 {fmt_ta(e4h)}
 
 This may be forex, commodity, or stock — apply universal price-action principles.
+Both LONG and SHORT signals are allowed (trade with the 4H trend).
 Follow the skill process exactly. Output ONLY the JSON object."""
 
     import traceback as _tb
