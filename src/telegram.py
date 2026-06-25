@@ -187,8 +187,8 @@ def _hashtag(symbol: str) -> str:
 
 
 def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
-    """One-message signal (used as a photo caption). Kept under Telegram's 1024-char
-    caption limit: chart + this caption + buttons = a single Telegram message."""
+    """One-message signal (photo caption): short, clean, professional. No tables —
+    plain lines so it never wraps or shows a code-copy button. Stays well under 1024."""
     meta = strategy(sig.get("setup", ""))
     short = sig.get("signal") == "short" or sig.get("side") == "short"
     e, sl = float(sig["entry"]), float(sig["stop_loss"])
@@ -196,6 +196,7 @@ def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
     tp1, tp2, tp3 = float(sig["tp1"]), float(sig["tp2"]), float(sig["tp3"])
     score = int(round(float(sig.get("score", 0) or 0)))
     sym = sig["symbol"]
+    P = fmt_price
 
     def rr(tp):
         return abs(tp - e) / r if r else 0.0
@@ -207,31 +208,25 @@ def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
     arrow = "🔻" if short else "🟢"
     direction = "SHORT" if short else "LONG"
 
-    # Perfectly aligned monospace plan (ASCII only inside <pre>)
-    P = fmt_price
-    plan = (
-        f"{'Kirish':<6}{P(e):>12}\n"
-        f"{'Stop':<6}{P(sl):>12}{'-'+format(loss_pct,'.2f')+'%':>9}{'-1.0R':>7}\n"
-        f"{'TP1':<6}{P(tp1):>12}{'+'+format(gain(tp1),'.2f')+'%':>9}{'+'+format(rr(tp1),'.1f')+'R':>7}{'40%':>5}\n"
-        f"{'TP2':<6}{P(tp2):>12}{'+'+format(gain(tp2),'.2f')+'%':>9}{'+'+format(rr(tp2),'.1f')+'R':>7}{'40%':>5}\n"
-        f"{'TP3':<6}{P(tp3):>12}{'+'+format(gain(tp3),'.2f')+'%':>9}{'+'+format(rr(tp3),'.1f')+'R':>7}{'20%':>5}"
-    )
-
     reason = " ".join((sig.get("reasoning") or "").split())
-    if len(reason) > 230:
-        reason = reason[:227].rstrip() + "…"
+    if len(reason) > 200:
+        reason = reason[:197].rstrip() + "…"
 
     lines = [
-        f"{_hashtag(sym)}  {arrow} <b>{direction}</b>  ·  <b>{sym}</b>",
-        f"<i>{meta['name']}</i> · Ishonch <b>{score}/10</b> {_conf_bar(score)}",
+        f"{_hashtag(sym)} · {arrow} <b>{direction}</b> · <b>{sym}</b>",
+        f"<i>{meta['name']}</i> · Ishonch <b>{score}/10</b>",
         "",
-        f"<pre>{plan}</pre>",
-        f"<pre>{render_scorecard(sig.get('scorecard', {}))}</pre>",
-        f"💡 <i>{reason}</i>",
+        f"📍 Kirish: <b>{P(e)}</b>",
+        f"🛑 Stop: <b>{P(sl)}</b>  <i>(−{loss_pct:.2f}%)</i>",
+        f"🎯 TP1: <b>{P(tp1)}</b>  <i>(+{gain(tp1):.2f}% · {rr(tp1):.1f}R)</i>",
+        f"🎯 TP2: <b>{P(tp2)}</b>  <i>(+{gain(tp2):.2f}% · {rr(tp2):.1f}R)</i>",
+        f"🎯 TP3: <b>{P(tp3)}</b>  <i>(+{gain(tp3):.2f}% · {rr(tp3):.1f}R)</i>",
+        "",
+        f"💡 {reason}",
     ]
     if market_ctx:
-        lines.append(f"🌐 {market_ctx}")
-    lines.append("⚖️ Risk 1% · TP1→breakeven  ·  ⚠️ <i>maslahat emas</i>")
+        lines.append(f"🌐 <i>{market_ctx}</i>")
+    lines.append("⚠️ <i>Moliyaviy maslahat emas · risk 1%</i>")
     return "\n".join(lines)
 
 
