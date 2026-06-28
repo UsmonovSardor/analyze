@@ -56,10 +56,12 @@ Read `strategy.md` → section "Market Regime". Classify as: Strong Bull Trend /
 - If **High-Volatility Chop**: output `none` immediately. Don't proceed further.
 
 ### Step 2 — Identify the Setup
-Which (if any) of Setup A, Setup B, or ICT Models (AMD/PO3, Judas Swing, Unicorn, Venom, Turtle Soup, MMXM) matches the data? Read `strategy.md` for full conditions on all setups.
+Read ALL strategies in `strategy.md`. Determine which SPECIFIC named strategy matches the current data best. This includes ALL sections: Setup A, Setup B, ICT Models (AMD/PO3, Judas Swing, Unicorn, Venom, Turtle Soup, MMXM), and all Additional Strategy Models (Matt's Wicks, Ali Khan DRT, Fibonacci Swing, ORB, Doyle Exchange, Bernd's Globex, Trader Mayne Monday Range, Tori Trend Line, SMB Offsides, Jooviers Gems, Scarface ORB, Omar Agag EBP, Tomtrades CBR, Toto Capital SBL, Nvidia AVWAP, Bard FX Nowick, 0xfibonacci Confluence, Trader Kane Lab, Trader Mike Failed 2s, Waqar Asim Forex Scalping, JJ Simon Fair Value).
 
-- Verify ALL required conditions are met, not just most.
-- A "B+" setup that fails one condition is still a reject.
+- Set `strategy_name` to the EXACT strategy name (e.g. "ICT Judas Swing", "Omar Agag EBP", "ORB", "JJ Simon Fair Value").
+- Set `market_type` to: BINANCE_FUTURES (for crypto), FOREX (for currency pairs), STOCKS (for US equities), GOLD (for XAUUSD).
+- Verify ALL required conditions of that strategy are met, not just most.
+- A strategy that fails one condition is still a reject — output "none".
 
 ### Step 3 — Candlestick Analysis
 Read `candlestick-patterns.md`. Look at the last 3–5 bars on the 1h chart.
@@ -75,12 +77,25 @@ Read `price-action.md`. Answer these questions:
 - Was there a sell climax before the pullback? (makes Setup A even stronger)
 - Does the breakout look genuine (2–3 confirming bars, low overlap) or does it look like a bull trap?
 
-### Step 5 — Score the Confluence
+### Step 5 — Score the Confluence and Build Confirmations
 Read `strategy.md` → Confluence Scorecard. Score every factor explicitly (write the points for each).
 Total ≥ 6 required. If < 6: output `none` with the score and primary reason.
 (For a short, judge each factor as the mirror image: "trend down" instead of "trend up", etc.)
 
 Also check performance feedback: if this setup type has been underperforming recently (< 40% win rate), demand score ≥ 8 before signaling.
+
+Build the `confirmations` list with MINIMUM 5 specific, factual statements. Each must reference actual price values, indicator readings, or structure levels seen in the data. Examples of GOOD confirmations:
+- "4h EMA50=42,150 > EMA200=39,800 — bullish structure confirmed"
+- "ICT Judas Swing: London session swept Asian low at 1.0837 by 3 pips then reversed"
+- "RSI 1h = 38.2 → turning up from oversold zone, previous low was 41.3"
+- "BTC 4h at 67,450 — above EMA200=63,200, risk-on environment"
+- "FVG at 1.0840–1.0845 filled on entry candle — clean institutional zone"
+- "Volume on breakout candle: 2.3× average — displacement confirmed"
+
+Examples of BAD (rejected) confirmations:
+- "Market is bullish" (no data)
+- "RSI is low" (no number)
+- "Trend is up" (too vague)
 
 ### Step 6 — Apply Risk Rules
 Read `risk-rules.md`. Derive:

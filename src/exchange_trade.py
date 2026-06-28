@@ -41,8 +41,13 @@ def client():
     return _client
 
 
+def _fetch_balance_safe() -> dict:
+    """Fetch balance without triggering margin/currency endpoints."""
+    return client().fetch_balance({"type": config.BINANCE_MARKET})
+
+
 def quote_balance(quote: str = "USDT") -> float:
-    bal = client().fetch_balance()
+    bal = _fetch_balance_safe()
     return float(bal.get("free", {}).get(quote, 0) or 0)
 
 
@@ -50,7 +55,7 @@ def portfolio() -> dict:
     """Read-only snapshot of balances valued in USDT. Returns a 451 note where blocked."""
     from .data import _exchange as price_src
     try:
-        bal = client().fetch_balance()
+        bal = _fetch_balance_safe()
     except ccxt.BaseError as exc:
         msg = str(exc)
         if "451" in msg or "restricted location" in msg:

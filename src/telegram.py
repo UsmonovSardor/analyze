@@ -154,24 +154,47 @@ def format_manual_plan(sig: dict, sig_id: int) -> str:
     """Copy-paste plan for the user to place the order themselves on Binance."""
     short = sig.get("signal") == "short" or sig.get("side") == "short"
     e, sl = float(sig["entry"]), float(sig["stop_loss"])
+    market_type = sig.get("market_type", "")
+    strategy_name = sig.get("strategy_name", "Signal")
+
     if short:
-        venue = "Binance Futures"
-        step2 = f"2️⃣ <b>Limit SELL / Short</b> oching: <code>{fmt_price(e)}</code>"
+        if market_type == "BINANCE_FUTURES":
+            venue = "Binance Futures"
+            limit_sell = fmt_price(round(e * 0.9995, 8))
+            step2 = (f"2️⃣ <b>STOP-LIMIT SELL</b> qo'ying:\n"
+                     f"   Stop narx (trigger): <code>{fmt_price(e)}</code>\n"
+                     f"   Limit narx: <code>{limit_sell}</code>")
+        else:
+            venue = "Forex broker"
+            step2 = f"2️⃣ <b>SELL STOP</b> order: <code>{fmt_price(e)}</code>"
     else:
-        venue = "Binance Spot yoki Futures"
-        step2 = f"2️⃣ <b>Limit BUY / Long</b> qo'ying: <code>{fmt_price(e)}</code>"
+        if market_type == "BINANCE_FUTURES":
+            venue = "Binance Futures"
+            limit_buy = fmt_price(round(e * 1.0005, 8))
+            step2 = (f"2️⃣ <b>STOP-LIMIT BUY</b> qo'ying:\n"
+                     f"   Stop narx (trigger): <code>{fmt_price(e)}</code>\n"
+                     f"   Limit narx: <code>{limit_buy}</code>")
+        elif market_type == "FOREX":
+            venue = "Forex broker"
+            step2 = f"2️⃣ <b>BUY STOP</b> order: <code>{fmt_price(e)}</code>"
+        else:
+            venue = "Binance Spot yoki broker"
+            step2 = f"2️⃣ <b>Limit BUY</b> order: <code>{fmt_price(e)}</code>"
+
     return (
         f"✍️ <b>QO'LDA SAVDO rejasi</b> — #{sig_id} {sig['symbol']} "
-        f"({'🔻 SHORT' if short else '🟢 LONG'})\n\n"
+        f"({'🔻 SHORT' if short else '🟢 LONG'})\n"
+        f"📌 Strategiya: <b>{strategy_name}</b>\n\n"
         f"1️⃣ {venue}'da <b>{sig['symbol']}</b> oching\n"
         f"{step2}\n"
-        f"3️⃣ <b>TP / SL</b> sozlang:\n"
+        f"3️⃣ <b>TP / SL sozlang:</b>\n"
         f"   🛑 Stop-loss: <code>{fmt_price(sl)}</code>\n"
-        f"   🎯 Take-profit (TP2): <code>{fmt_price(sig['tp2'])}</code>\n"
+        f"   🎯 TP1 (40%): <code>{fmt_price(sig['tp1'])}</code>\n"
+        f"   🎯 TP2 (40%): <code>{fmt_price(sig['tp2'])}</code>\n"
+        f"   🎯 TP3 (20%): <code>{fmt_price(sig['tp3'])}</code>\n"
         f"4️⃣ Hajm: depozitning 1% riskiga moslang\n\n"
-        f"📌 TP1 (<code>{fmt_price(sig['tp1'])}</code>) urilganda 40% oling va stop'ni "
-        f"kirish narxiga (breakeven) ko'chiring.\n"
-        f"Bot bu signal natijasini avtomatik kuzatib, sizga xabar beradi."
+        f"📌 TP1 urganda 40% yoping va SL'ni breakeven'ga ko'chiring.\n"
+        f"Bot natijalarni avtomatik kuzatib xabar beradi."
     )
 
 
@@ -186,10 +209,16 @@ def _hashtag(symbol: str) -> str:
     return f"#{base}"
 
 
+_MARKET_LABELS = {
+    "BINANCE_FUTURES": "🟡 Binance Futures",
+    "FOREX":   "💱 Forex",
+    "STOCKS":  "📈 US Stocks",
+    "GOLD":    "🏅 XAUUSD / Gold",
+}
+
+
 def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
-    """One-message signal (photo caption): short, clean, professional. No tables —
-    plain lines so it never wraps or shows a code-copy button. Stays well under 1024."""
-    meta = strategy(sig.get("setup", ""))
+    """One-message signal (photo caption): strategy name, market type, 5+ confirmations."""
     short = sig.get("signal") == "short" or sig.get("side") == "short"
     e, sl = float(sig["entry"]), float(sig["stop_loss"])
     r = abs(e - sl)
@@ -198,32 +227,57 @@ def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
     sym = sig["symbol"]
     P = fmt_price
 
+    strategy_name = sig.get("strategy_name") or strategy(sig.get("setup", "")).get("name", "Signal")
+    market_type = sig.get("market_type", "")
+    market_label = _MARKET_LABELS.get(market_type, market_type or "")
+
     def rr(tp):
         return abs(tp - e) / r if r else 0.0
 
-    def gain(tp):            # profit-side % move (positive, direction-aware)
+    def gain(tp):
         return abs(tp - e) / e * 100
 
     loss_pct = abs(sl - e) / e * 100
     arrow = "🔻" if short else "🟢"
     direction = "SHORT" if short else "LONG"
 
+    # Confirmations — at least 5 bullet points
+    confs = sig.get("confirmations") or []
+    conf_lines = []
+    for i, c in enumerate(confs[:7], 1):
+        conf_lines.append(f"  {i}. {c}")
+
+    # Reasoning (shorter since we have confirmations)
     reason = " ".join((sig.get("reasoning") or "").split())
-    if len(reason) > 200:
-        reason = reason[:197].rstrip() + "…"
+    if len(reason) > 180:
+        reason = reason[:177].rstrip() + "…"
+
+    # Order type hint
+    if market_type == "BINANCE_FUTURES":
+        order_hint = "⚡ Stop-limit order bilan kiring"
+    elif market_type == "FOREX":
+        order_hint = "💱 Limit yoki market order"
+    else:
+        order_hint = "📊 Market yoki limit order"
 
     lines = [
-        f"{_hashtag(sym)} · {arrow} <b>{direction}</b> · <b>{sym}</b>",
-        f"<i>{meta['name']}</i> · Ishonch <b>{score}/10</b>",
+        f"{market_label}  {_hashtag(sym)}",
+        f"{arrow} <b>{direction}</b> · <b>{sym}</b> · #{sig_id}",
+        f"📌 <b>{strategy_name}</b> · Ishonch <b>{score}/10</b>  {_conf_bar(score)}",
         "",
-        f"📍 Kirish: <b>{P(e)}</b>",
-        f"🛑 Stop: <b>{P(sl)}</b>  <i>(−{loss_pct:.2f}%)</i>",
-        f"🎯 TP1: <b>{P(tp1)}</b>  <i>(+{gain(tp1):.2f}% · {rr(tp1):.1f}R)</i>",
-        f"🎯 TP2: <b>{P(tp2)}</b>  <i>(+{gain(tp2):.2f}% · {rr(tp2):.1f}R)</i>",
-        f"🎯 TP3: <b>{P(tp3)}</b>  <i>(+{gain(tp3):.2f}% · {rr(tp3):.1f}R)</i>",
+        f"📍 Kirish: <b>{P(e)}</b>  {order_hint}",
+        f"🛑 Stop-loss: <b>{P(sl)}</b>  <i>(−{loss_pct:.2f}%)</i>",
+        f"🎯 TP1 (40%): <b>{P(tp1)}</b>  <i>(+{gain(tp1):.2f}% · {rr(tp1):.1f}R)</i>",
+        f"🎯 TP2 (40%): <b>{P(tp2)}</b>  <i>(+{gain(tp2):.2f}% · {rr(tp2):.1f}R)</i>",
+        f"🎯 TP3 (20%): <b>{P(tp3)}</b>  <i>(+{gain(tp3):.2f}% · {rr(tp3):.1f}R)</i>",
         "",
-        f"💡 {reason}",
+        f"✅ <b>Tasdiqlar ({len(confs)}):</b>",
     ]
+    lines.extend(conf_lines)
+    if not conf_lines:
+        lines.append(f"  💡 {reason}")
+    else:
+        lines.append(f"\n💡 {reason}")
     if market_ctx:
         lines.append(f"🌐 <i>{market_ctx}</i>")
     lines.append("⚠️ <i>Moliyaviy maslahat emas · risk 1%</i>")

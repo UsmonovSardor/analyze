@@ -205,39 +205,62 @@ async def scan_once(notify_chat_id=None):
         signals_found = 0
         skipped_429   = 0
 
+        async def _tv_with_backoff(coro, symbol: str) -> tuple:
+            """Run coro with up to 3 retries on 429, exponential backoff (10s, 30s, 60s)."""
+            delays = [10, 30, 60]
+            for attempt, delay in enumerate(delays + [None]):
+                try:
+                    return True, await coro
+                except Exception as exc:
+                    if "429" not in str(exc) or attempt == len(delays):
+                        return False, exc
+                    print(f"[scan-tv] 429 on {symbol}, retry in {delay}s (attempt {attempt+1})")
+                    await asyncio.sleep(delay)
+            return False, None
+
         for tv_sym in config.TV_SYMBOLS:
             ccxt_symbol = tv_symbol_to_ccxt(tv_sym)
             if ccxt_symbol:
+                ok, result = await _tv_with_backoff(_find_candidate_tv_async(tv_sym), tv_sym["symbol"])
+                if not ok:
+                    exc = result
+                    if exc and "429" in str(exc):
+                        skipped_429 += 1
+                    elif exc:
+                        print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+                    continue
+                hint = result
+                if not hint:
+                    continue
+                # When BTC 4h is bearish, block crypto LONGS but still allow SHORTS.
+                if not btc_ok and hint.get("side") == "long":
+                    continue
                 try:
-                    hint = await _find_candidate_tv_async(tv_sym)
-                    if not hint:
-                        continue
-                    # When BTC 4h is bearish, block crypto LONGS but still allow SHORTS.
-                    if not btc_ok and hint.get("side") == "long":
-                        continue
                     snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
                         ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
                     sent = await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
                     if sent:
                         signals_found += 1
-                except Exception as exc:
-                    if "429" in str(exc):
-                        skipped_429 += 1
-                    else:
-                        print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+                except Exception:
+                    print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
             else:
+                ok, result = await _tv_with_backoff(_find_candidate_tv_async(tv_sym), tv_sym["symbol"])
+                if not ok:
+                    exc = result
+                    if exc and "429" in str(exc):
+                        skipped_429 += 1
+                    elif exc:
+                        print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+                    continue
+                hint = result
+                if not hint:
+                    continue
                 try:
-                    hint = await _find_candidate_tv_async(tv_sym)
-                    if not hint:
-                        continue
                     sent = await _process_tv_noncrpyto(tv_sym, hint, perf, f"{tv_sym['symbol']} • {tv_sym['screener'].upper()}")
                     if sent:
                         signals_found += 1
-                except Exception as exc:
-                    if "429" in str(exc):
-                        skipped_429 += 1
-                    else:
-                        print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+                except Exception:
+                    print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
 
         summary = f"✅ <b>Skanerlash tugadi</b>\n"
         if signals_found:

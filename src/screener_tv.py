@@ -86,27 +86,45 @@ def find_candidate_tv(tv_sym: dict):
     rec_4h  = ctx.summary.get("RECOMMENDATION", "")
 
     # ── LONG candidates (uptrend) ──────────────────────────────────────────
+    # Setup A: pullback to EMA50 in uptrend
     if uptrend_4h and ema50_1h > 0 and atr_1h > 0:
-        near_ema50 = abs(close_1h - ema50_1h) <= 1.2 * atr_1h
-        rsi_reset  = rsi_1h < 55 and stoch_k < 55
+        near_ema50 = abs(close_1h - ema50_1h) <= 1.5 * atr_1h  # wider zone
+        rsi_reset  = rsi_1h < 60 and stoch_k < 60
         if near_ema50 and rsi_reset:
             return {"setup": "A", "side": "long"}
-    if uptrend_4h and buy_1h >= 10 and rec_1h in ("STRONG_BUY", "BUY") and rsi_1h < 70:
+
+    # Setup B: strong buy momentum
+    if uptrend_4h and buy_1h >= 8 and rec_1h in ("STRONG_BUY", "BUY") and rsi_1h < 72:
         return {"setup": "B", "side": "long"}
-    if rec_4h == "STRONG_BUY" and buy_4h >= 12 and buy_1h >= 8 and rsi_1h < 65:
+
+    # TV: strong 4h + 1h alignment
+    if rec_4h in ("STRONG_BUY", "BUY") and buy_4h >= 10 and buy_1h >= 7 and rsi_1h < 68:
         return {"setup": "TV", "side": "long"}
+
+    # Near EMA200 support bounce in any context
+    if ema200_1h > 0 and abs(close_1h - ema200_1h) <= 1.0 * atr_1h and buy_1h >= 6:
+        return {"setup": "B", "side": "long"}
 
     # ── SHORT candidates (downtrend) — mirror logic ────────────────────────
     if config.ALLOW_SHORTS:
+        # Setup A: bounce to EMA50 resistance in downtrend
         if downtrend_4h and ema50_1h > 0 and atr_1h > 0:
-            near_ema50 = abs(close_1h - ema50_1h) <= 1.2 * atr_1h
-            rsi_reset  = rsi_1h > 45 and stoch_k > 45  # bounce up into resistance
+            near_ema50 = abs(close_1h - ema50_1h) <= 1.5 * atr_1h
+            rsi_reset  = rsi_1h > 40 and stoch_k > 40
             if near_ema50 and rsi_reset:
                 return {"setup": "A", "side": "short"}
-        if downtrend_4h and sell_1h >= 10 and rec_1h in ("STRONG_SELL", "SELL") and rsi_1h > 30:
+
+        # Setup B: strong sell momentum
+        if downtrend_4h and sell_1h >= 8 and rec_1h in ("STRONG_SELL", "SELL") and rsi_1h > 28:
             return {"setup": "B", "side": "short"}
-        if rec_4h == "STRONG_SELL" and sell_4h >= 12 and sell_1h >= 8 and rsi_1h > 35:
+
+        # TV: strong 4h + 1h sell alignment
+        if rec_4h in ("STRONG_SELL", "SELL") and sell_4h >= 10 and sell_1h >= 7 and rsi_1h > 32:
             return {"setup": "TV", "side": "short"}
+
+        # Near EMA200 resistance rejection in any context
+        if ema200_1h > 0 and abs(close_1h - ema200_1h) <= 1.0 * atr_1h and sell_1h >= 6:
+            return {"setup": "B", "side": "short"}
 
     return None
 

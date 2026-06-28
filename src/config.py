@@ -15,17 +15,17 @@ ENTRY_TF = "1h"
 CONTEXT_TF = "4h"
 CANDLES = 300  # bars fetched per timeframe
 
-SCAN_INTERVAL_SEC = 15 * 60       # screener cadence
-OUTCOME_CHECK_SEC = 10 * 60       # open-signal TP/SL checker cadence
+SCAN_INTERVAL_SEC = 30 * 60       # screener cadence — 30 daqiqada bir scan
+OUTCOME_CHECK_SEC = 5 * 60        # open-signal TP/SL checker cadence
 
 # Risk engine gates (deterministic, independent of the model)
-# Tuned for ~10 signals/day across crypto + forex + stocks, both directions.
+# Tuned for ~5-8 signals/day across crypto + forex + stocks, both directions.
 MIN_SCORE = int(os.getenv("MIN_SCORE", "6"))
-MIN_RR_TP2 = float(os.getenv("MIN_RR_TP2", "1.8"))   # entry->TP2 must be >= this R
-MAX_SIGNALS_PER_DAY = int(os.getenv("MAX_SIGNALS_PER_DAY", "20"))
-TARGET_SIGNALS_PER_DAY = int(os.getenv("TARGET_SIGNALS_PER_DAY", "10"))
-MAX_OPEN_SIGNALS = int(os.getenv("MAX_OPEN_SIGNALS", "14"))
-COOLDOWN_HOURS_PER_SYMBOL = int(os.getenv("COOLDOWN_HOURS_PER_SYMBOL", "6"))
+MIN_RR_TP2 = float(os.getenv("MIN_RR_TP2", "1.6"))   # entry->TP2 must be >= this R
+MAX_SIGNALS_PER_DAY = int(os.getenv("MAX_SIGNALS_PER_DAY", "12"))
+TARGET_SIGNALS_PER_DAY = int(os.getenv("TARGET_SIGNALS_PER_DAY", "5"))
+MAX_OPEN_SIGNALS = int(os.getenv("MAX_OPEN_SIGNALS", "8"))
+COOLDOWN_HOURS_PER_SYMBOL = int(os.getenv("COOLDOWN_HOURS_PER_SYMBOL", "3"))
 
 # Direction: allow short signals (forex both ways; crypto short on Futures).
 ALLOW_SHORTS = os.getenv("ALLOW_SHORTS", "true").lower() == "true"

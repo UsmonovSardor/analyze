@@ -28,7 +28,7 @@ def _skill() -> str:
     return _SKILL
 
 
-_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]
+_GEMINI_MODELS_DEFAULT = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]
 
 
 def _gemini_client():
@@ -39,7 +39,14 @@ def _gemini_generate(prompt: str, model_name: str | None = None) -> str:
     """Call Gemini with automatic model fallback on 503."""
     import time as _time
     client = _gemini_client()
-    models = [model_name] if model_name else _GEMINI_MODELS
+    # config.GEMINI_MODEL env var used as primary; rest are fallbacks
+    env_model = config.GEMINI_MODEL
+    if model_name:
+        models = [model_name]
+    elif env_model and env_model not in _GEMINI_MODELS_DEFAULT:
+        models = [env_model] + _GEMINI_MODELS_DEFAULT
+    else:
+        models = [env_model] + [m for m in _GEMINI_MODELS_DEFAULT if m != env_model]
     last_exc = None
     for m in models:
         for attempt in range(2):
