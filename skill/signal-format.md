@@ -32,7 +32,7 @@ Signal:
 }
 
 CRITICAL RULES:
-1. `confirmations` MUST have at least 5 items. Each must be a SPECIFIC, FACTUAL statement with actual data values (price levels, EMA values, RSI numbers, etc.). Generic phrases like "trend is bullish" are REJECTED — write "4h EMA50=42,100 > EMA200=38,500 — bullish structure".
+1. `confirmations` MUST have at least 3 items (aim for 5 when the data supports it). Each must be a SPECIFIC, FACTUAL statement with actual data values (price levels, EMA values, RSI numbers, etc.). Generic phrases like "trend is bullish" are REJECTED — write "4h EMA50=42,100 > EMA200=38,500 — bullish structure".
 2. `strategy_name` MUST match one of the strategies in strategy.md (e.g. "ICT Venom Model", "ORB", "Doyle Exchange", "Trader Kane Lab Model", "Omar Agag EBP", "Ali Khan DRT", etc.).
 3. `market_type` defines where to trade: BINANCE_FUTURES (crypto shorts/longs on perpetuals), FOREX (currency pairs via broker), STOCKS (US equities), GOLD (XAUUSD).
 4. For BINANCE_FUTURES: entry order type is STOP-LIMIT (stop order placed above/below current price). Do NOT suggest limit orders for futures entry.

@@ -88,27 +88,28 @@ BTC bull). All other rejection rules apply with direction reversed.
 
 ---
 
-## Confluence Scorecard (need ≥ 8 to pass — NO EXCEPTIONS)
+## Confluence Scorecard (need ≥ 6 to pass)
 
-| # | Factor | Points | How to judge |
+Score maps 1:1 to the `scorecard` object in `signal-format.md`. Maximum 10 points.
+
+| # | Factor (scorecard key) | Points | How to judge |
 |---|--------|--------|--------------|
-| 1 | **4h trend aligned** (EMA50 > EMA200, price above both) | 2 | Both required for 2 pts; price above EMA200 only = 1 pt; neither = 0, reject |
-| 2 | **Entry at a real level** (EMA50, prior breakout, swing S/R, 4h pivot, FVG, order block) | 2 | Two or more levels coincide = 2 pts; single clear level = 1 pt; vague zone = 0 pts |
-| 3 | **Volume confirms** (pullback volume < impulse avg AND entry bar volume ≥ 1.2× avg) | 2 | Both conditions met = 2 pts; one met = 1 pt; neither = 0 pts |
-| 4 | **RSI/MACD momentum aligned** (RSI reset below 45 + turning up; MACD histogram flipping positive) | 1 | RSI divergence present = automatic 0 pts AND reject the whole trade |
-| 5 | **BTC / macro context supportive** (BTC 4h bullish or neutral for longs; bearish for shorts) | 1 | BTC actively falling on 4h during a long = 0 pts |
-| 6 | **Clean room to TP2** (nearest resistance ≥ 2.5R away from entry) | 1 | Resistance < 1.5R = reject entire trade; 1.5–2.5R = 0 pts here but trade allowed |
-| 7 | **Nison candle confirmed** (hammer/engulfing/morning star/strong bull bar at exact entry level) | 1 | Weak or absent pattern = 0 pts |
-| 8 | **ICT confluence present** (order block / FVG / liquidity sweep / breaker at entry zone) | 1 | At least one ICT factor present = 1 pt; none = 0 pts |
-| 9 | **Brooks structure quality** (two-leg pullback OR clean breakout with low-volume retest) | 1 | Single-leg pullback with no extra confirmation = 0 pts |
-| 10 | **5-Strategy Gate passed** (≥5 families confirmed per Step 5 above) | 1 | If gate not passed, entire trade is rejected regardless of score |
+| 1 | **4h trend aligned** (`trend`) — EMA50 > EMA200, price above both | 2 | Both required for 2 pts; price above EMA200 only = 1 pt; neither = 0 |
+| 2 | **Entry at a real level** (`level`) — EMA50, prior breakout, swing S/R, 4h pivot, FVG, order block | 2 | Two or more levels coincide = 2 pts; single clear level = 1 pt; vague zone = 0 pts |
+| 3 | **Volume confirms** (`volume`) — pullback volume < impulse avg, OR entry/breakout bar volume ≥ 1.2× avg | 2 | Both/clear = 2 pts; one = 1 pt; volume against = 0 pts |
+| 4 | **RSI/MACD momentum aligned** (`rsi`) — RSI reset below 45 + turning in trade direction | 1 | RSI divergence AGAINST the trade = 0 pts here |
+| 5 | **BTC / macro context supportive** (`btc`) — BTC 4h bullish/neutral for longs; bearish for shorts | 1 | BTC actively falling on 4h during a long = 0 pts |
+| 6 | **Clean room to TP2** (`room`) — nearest resistance ≥ 2R away from entry | 1 | Major resistance < 1R = reject entire trade; 1–2R = 0 pts here but trade allowed |
+| 7 | **Candle confirmed** (`candle`) — hammer/engulfing/morning star/strong trend bar at entry level | 1 | Weak or absent pattern = 0 pts |
 
-**Maximum score: 13 points. Minimum to signal: 8 points.**
-Score every factor explicitly. State exact points. A score of 7/13 that "looks great" is still 7/13 — reject.
+**Maximum score: 10 points. Minimum to signal: 6 points.**
+Score every factor explicitly and state the exact points. Extra confluence beyond the scorecard
+(ICT smart-money, Brooks two-leg structure, multiple strategy families agreeing) does not add raw
+points but should push a borderline 6 toward a confident signal — mention it in the reasoning.
 For shorts, score each factor as its mirror (trend DOWN, RSI rolling over, breakdown volume, etc.).
 
-**From Market Wizards**: "Risk control is the #1 common denominator among ALL top traders."
-**From Livermore**: "The money is made by sitting, not trading." Wait for the perfect setup.
+**From Market Wizards**: "Risk control is the #1 common denominator among ALL top traders." A setup
+that scores 6 and passes the rules is a valid signal — do not negotiate the minimum upward without cause.
 
 ---
 

@@ -33,7 +33,7 @@ ALLOW_SHORTS = os.getenv("ALLOW_SHORTS", "true").lower() == "true"
 BTC_GATE_BLOCKS_LONGS_ONLY = True
 
 # Gemini
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 MAX_CLAUDE_CALLS_PER_DAY = int(os.getenv("MAX_CLAUDE_CALLS_PER_DAY", "150"))
 
 # Telegram
