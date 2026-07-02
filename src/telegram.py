@@ -1,4 +1,5 @@
 """Telegram delivery (plain Bot API via requests — no framework needed)."""
+import html
 import json
 
 import requests
@@ -7,6 +8,12 @@ from . import config
 from .strategy_meta import render_scorecard, strategy
 
 API = "https://api.telegram.org/bot{token}/{method}"
+
+
+def _esc(text) -> str:
+    """Escape &, <, > so model-written text can't break Telegram HTML parsing.
+    Only applied to dynamic/AI values — never to the tags the code adds itself."""
+    return html.escape(str(text), quote=False)
 
 
 def _call(method: str, payload: dict, timeout: int = 15):
@@ -20,10 +27,17 @@ def _call(method: str, payload: dict, timeout: int = 15):
         )
         if not r.ok:
             print(f"[telegram] {method} failed: {r.status_code} {r.text[:200]}")
-        return r.json() if r.ok else None
+        try:
+            return r.json()          # return body even on 4xx so callers can inspect the error
+        except ValueError:
+            return None
     except requests.RequestException as exc:
         print(f"[telegram] {method} network error: {exc}")
         return None
+
+
+def _is_parse_error(res) -> bool:
+    return bool(res and not res.get("ok") and "parse" in str(res.get("description", "")).lower())
 
 
 def send(text: str, reply_markup: dict | None = None, chat_id=None) -> int | None:
@@ -32,6 +46,11 @@ def send(text: str, reply_markup: dict | None = None, chat_id=None) -> int | Non
     if reply_markup:
         payload["reply_markup"] = reply_markup
     res = _call("sendMessage", payload)
+    if _is_parse_error(res):
+        # A dynamic value slipped through with bad HTML — resend as plain text so the
+        # message still reaches the user (formatting is lost, delivery is not).
+        payload.pop("parse_mode", None)
+        res = _call("sendMessage", payload)
     return res["result"]["message_id"] if res and res.get("ok") else None
 
 
@@ -42,12 +61,27 @@ def send_photo(png: bytes, caption: str = "", reply_markup: dict | None = None, 
     data = {"chat_id": chat_id or config.TELEGRAM_CHAT_ID, "caption": caption[:1024], "parse_mode": "HTML"}
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
+    def _post(payload: dict):
+        return requests.post(API.format(token=config.TELEGRAM_BOT_TOKEN, method="sendPhoto"),
+                             data=payload, files={"photo": ("chart.png", png, "image/png")}, timeout=30)
     try:
-        r = requests.post(API.format(token=config.TELEGRAM_BOT_TOKEN, method="sendPhoto"),
-                          data=data, files={"photo": ("chart.png", png, "image/png")}, timeout=30)
+        r = _post(data)
         if not r.ok:
             print(f"[telegram] sendPhoto failed: {r.status_code} {r.text[:200]}")
-            return None
+            body = {}
+            try:
+                body = r.json()
+            except ValueError:
+                pass
+            if "parse" in str(body.get("description", "")).lower():
+                # Bad HTML in the caption — resend the photo as plain caption.
+                data.pop("parse_mode", None)
+                r = _post(data)
+                if not r.ok:
+                    print(f"[telegram] sendPhoto plain retry failed: {r.status_code} {r.text[:200]}")
+                    return None
+            else:
+                return None
         return r.json()["result"]["message_id"]
     except requests.RequestException as exc:
         print(f"[telegram] sendPhoto network error: {exc}")
@@ -155,7 +189,7 @@ def format_manual_plan(sig: dict, sig_id: int) -> str:
     short = sig.get("signal") == "short" or sig.get("side") == "short"
     e, sl = float(sig["entry"]), float(sig["stop_loss"])
     market_type = sig.get("market_type", "")
-    strategy_name = sig.get("strategy_name", "Signal")
+    strategy_name = _esc(sig.get("strategy_name", "Signal"))
 
     if short:
         if market_type == "BINANCE_FUTURES":
@@ -227,7 +261,7 @@ def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
     sym = sig["symbol"]
     P = fmt_price
 
-    strategy_name = sig.get("strategy_name") or strategy(sig.get("setup", "")).get("name", "Signal")
+    strategy_name = _esc(sig.get("strategy_name") or strategy(sig.get("setup", "")).get("name", "Signal"))
     market_type = sig.get("market_type", "")
     market_label = _MARKET_LABELS.get(market_type, market_type or "")
 
@@ -245,12 +279,13 @@ def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
     confs = sig.get("confirmations") or []
     conf_lines = []
     for i, c in enumerate(confs[:7], 1):
-        conf_lines.append(f"  {i}. {c}")
+        conf_lines.append(f"  {i}. {_esc(c)}")
 
     # Reasoning (shorter since we have confirmations)
     reason = " ".join((sig.get("reasoning") or "").split())
     if len(reason) > 180:
         reason = reason[:177].rstrip() + "…"
+    reason = _esc(reason)
 
     # Order type hint
     if market_type == "BINANCE_FUTURES":
