@@ -64,7 +64,8 @@ def render(symbol: str, snap: dict, sig: dict | None = None, result: dict | None
         if lo <= lvl <= hi:
             ax.axhline(lvl, color="#26a69a", linestyle=":", linewidth=0.8, alpha=0.45, zorder=1)
 
-    title = f"{symbol}  ·  1h"
+    tf = snap.get("tf_entry", "1h")
+    title = f"{symbol}  ·  {tf}"
 
     # signal annotations
     if sig and sig.get("signal") in ("long", "short"):
@@ -95,7 +96,7 @@ def render(symbol: str, snap: dict, sig: dict | None = None, result: dict | None
                     arrowprops=dict(arrowstyle="->", color="#ffffff", lw=2))
         meta_setup = sig.get("setup", "")
         direction = "SHORT" if is_short else "LONG"
-        title = f"{symbol}  ·  1h  ·  {direction} (Setup {meta_setup}, {sig.get('score')}/10)"
+        title = f"{symbol}  ·  {tf}  ·  {direction} (Setup {meta_setup}, {sig.get('score')}/10)"
 
         # closed-trade outcome overlay
         if result:

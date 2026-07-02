@@ -70,6 +70,8 @@ def snapshot(symbol: str, entry_tf: str, context_tf: str, candles: int) -> dict:
         "symbol": symbol,
         "entry_tf": e,
         "context_tf": ctx,
+        "tf_entry": entry_tf,
+        "tf_ctx": context_tf,
         "resistance_1h": res,
         "support_1h": sup,
         "resistance_4h": res4,
@@ -112,17 +114,61 @@ def _resample_4h(df1h: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
-def snapshot_yf(symbol: str, ticker: str, candles: int = 300) -> dict:
-    """Snapshot for non-crypto instruments — same shape as snapshot()."""
-    h1 = _yf_hourly(ticker)
-    e = add_indicators(h1.tail(candles).reset_index(drop=True).copy())
-    ctx = add_indicators(_resample_4h(h1).tail(candles).reset_index(drop=True).copy())
+def _yf_interval(ticker: str, interval: str, period: str) -> pd.DataFrame:
+    import time as _t
+    import yfinance as yf
+    key = f"{ticker}:{interval}"
+    hit = _YF_CACHE.get(key)
+    if hit and _t.time() - hit[0] < _YF_CACHE_TTL:
+        return hit[1]
+    raw = yf.download(ticker, interval=interval, period=period, progress=False,
+                      auto_adjust=True, multi_level_index=False)
+    if raw is None or raw.empty:
+        raise RuntimeError(f"yfinance: no {interval} data for {ticker}")
+    df = raw.reset_index()
+    ts_col = "Datetime" if "Datetime" in df.columns else "Date"
+    df = df.rename(columns={ts_col: "ts", "Open": "open", "High": "high",
+                            "Low": "low", "Close": "close", "Volume": "volume"})
+    df = df[["ts", "open", "high", "low", "close", "volume"]].dropna(subset=["close"])
+    df["ts"] = pd.to_datetime(df["ts"], utc=True)
+    _YF_CACHE[key] = (_t.time(), df)
+    return df
+
+
+def _resample(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    return df.set_index("ts").resample(rule).agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+    ).dropna(subset=["close"]).reset_index()
+
+
+def snapshot_yf(symbol: str, ticker: str, candles: int = 300,
+                entry_tf: str = "1h", context_tf: str = "4h") -> dict:
+    """Snapshot for non-crypto instruments — same shape as snapshot().
+    Supported entry TFs: 15m (ctx 1h), 1h (ctx 4h), 4h (ctx 1d), 1d (ctx 1w)."""
+    if entry_tf == "15m":
+        e_df, c_df = _yf_interval(ticker, "15m", "30d"), _yf_hourly(ticker)
+        context_tf = "1h"
+    elif entry_tf == "4h":
+        e_df, c_df = _resample_4h(_yf_hourly(ticker)), _yf_interval(ticker, "1d", "2y")
+        context_tf = "1d"
+    elif entry_tf == "1d":
+        d = _yf_interval(ticker, "1d", "2y")
+        e_df, c_df = d, _resample(d, "1W")
+        context_tf = "1w"
+    else:
+        entry_tf = "1h"
+        e_df, c_df = _yf_hourly(ticker), _resample_4h(_yf_hourly(ticker))
+        context_tf = "4h"
+    e = add_indicators(e_df.tail(candles).reset_index(drop=True).copy())
+    ctx = add_indicators(c_df.tail(candles).reset_index(drop=True).copy())
     res, sup = swing_levels(e)
     res4, sup4 = swing_levels(ctx, lookback=80)
     return {
         "symbol": symbol,
         "entry_tf": e,
         "context_tf": ctx,
+        "tf_entry": entry_tf,
+        "tf_ctx": context_tf,
         "resistance_1h": res,
         "support_1h": sup,
         "resistance_4h": res4,

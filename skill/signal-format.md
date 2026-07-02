@@ -3,7 +3,7 @@
 Respond with ONLY a JSON object, no markdown fences, no prose outside it.
 
 Rejection:
-{"signal": "none", "symbol": "<SYMBOL>", "reason": "<one short sentence why>", "score": <0-10>}
+{"signal": "none", "symbol": "<SYMBOL>", "reason": "<bitta qisqa jumla, O'ZBEK tilida>", "score": <0-10>}
 
 Signal:
 {
@@ -32,6 +32,7 @@ Signal:
 }
 
 CRITICAL RULES:
+0. `reason`, `reasoning` and every `confirmations` item MUST be in UZBEK (texnik atamalar qolishi mumkin: EMA50, RSI, order block...).
 1. `confirmations` MUST have at least 3 items (aim for 5 when the data supports it). Each must be a SPECIFIC, FACTUAL statement with actual data values (price levels, EMA values, RSI numbers, etc.). Generic phrases like "trend is bullish" are REJECTED — write "4h EMA50=42,100 > EMA200=38,500 — bullish structure".
 2. `strategy_name` MUST match one of the strategies in strategy.md (e.g. "ICT Venom Model", "ORB", "Doyle Exchange", "Trader Kane Lab Model", "Omar Agag EBP", "Ali Khan DRT", etc.).
 3. `market_type` defines where to trade: BINANCE_FUTURES (crypto shorts/longs on perpetuals), FOREX (currency pairs via broker), STOCKS (US equities), GOLD (XAUUSD).

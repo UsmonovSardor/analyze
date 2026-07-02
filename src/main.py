@@ -25,6 +25,10 @@ _reject_cooldown: dict = {}
 REJECT_COOLDOWN_SEC = 2 * 3600
 
 
+# On-demand analysis timeframes: entry TF -> higher context TF
+TF_CONTEXT = {"15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w"}
+
+
 def _recently_rejected(symbol: str) -> bool:
     return time.time() - _reject_cooldown.get(symbol, 0.0) < REJECT_COOLDOWN_SEC
 
@@ -37,10 +41,11 @@ def send_chart(symbol: str, snap: dict, sig: dict | None = None, chat_id=None):
     """Render and post an annotated chart; never let a chart error block a signal."""
     try:
         png = chart.render(symbol, snap, sig)
-        cap = f"📈 <b>{symbol}</b> · 1h"
+        tf = snap.get("tf_entry", "1h")
+        cap = f"📈 <b>{symbol}</b> · {tf}"
         if sig and sig.get("signal") in ("long", "short"):
-            cap = (f"🔻 <b>{symbol}</b> · SHORT · 1h" if sig.get("signal") == "short"
-                   else f"🟢 <b>{symbol}</b> · LONG · 1h")
+            cap = (f"🔻 <b>{symbol}</b> · SHORT · {tf}" if sig.get("signal") == "short"
+                   else f"🟢 <b>{symbol}</b> · LONG · {tf}")
         telegram.send_photo(png, caption=cap, chat_id=chat_id)
     except Exception:
         print(f"[chart] error for {symbol}:\n{traceback.format_exc()}")
@@ -219,7 +224,8 @@ async def scan_once(notify_chat_id=None):
             # When BTC 4h is bearish, block crypto LONGS but still allow SHORTS.
             if not btc_ok and hint.get("side") == "long":
                 continue
-            if await _process_candidate(symbol, snap, hint, btc_snap, perf, ctx_str):
+            if await _process_candidate(symbol, snap, hint, btc_snap, perf,
+                                        f"{symbol} • CRYPTO • {config.ENTRY_TF}"):
                 signals_found += 1
         except Exception:
             errors += 1
@@ -343,11 +349,13 @@ def _resolve_symbol(raw: str):
     return "crypto", f"{base}/USDT"
 
 
-async def analyze_on_demand(symbol_raw: str, chat_id=None) -> str:
-    """Full Gemini analysis + chart for any instrument (crypto/forex/gold/stock)."""
+async def analyze_on_demand(symbol_raw: str, chat_id=None, tf: str = "1h") -> str:
+    """Full Gemini analysis + chart for any instrument, on the chosen timeframe."""
     if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
         return "⏳ Bugungi tahlil limiti tugadi, ertaga urinib ko'ring."
 
+    tf = tf if tf in TF_CONTEXT else "1h"
+    ctx_tf = TF_CONTEXT[tf]
     kind, target = _resolve_symbol(symbol_raw)
     symbol = target["symbol"] if kind == "nc" else target
 
@@ -357,13 +365,14 @@ async def analyze_on_demand(symbol_raw: str, chat_id=None) -> str:
             if not market_open(target["kind"]):
                 return (f"🕐 <b>{symbol}</b> — bozor hozir yopiq "
                         f"({'aksiya sessiyasi 18:30-01:00 Tashkent' if target['kind'] == 'stock' else 'forex dam olish kunlari yopiq'}).")
-            snap = await asyncio.to_thread(snapshot_yf, symbol, target["yf"])
-            ctx_str = f"{symbol} • {target['kind'].upper()}"
+            snap = await asyncio.to_thread(snapshot_yf, symbol, target["yf"],
+                                           config.CANDLES, tf, ctx_tf)
+            ctx_str = f"{symbol} • {target['kind'].upper()} • {tf}"
             cur = float(snap["entry_tf"]["close"].iloc[-1])
         else:
-            snap = btc_snap if symbol == "BTC/USDT" else snapshot(
-                symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-            ctx_str = market_context(btc_snap)
+            snap = (btc_snap if symbol == "BTC/USDT" and tf == config.ENTRY_TF
+                    else snapshot(symbol, tf, ctx_tf, config.CANDLES))
+            ctx_str = f"{symbol} • CRYPTO • {tf}"
             cur = last_price(symbol)
     except Exception as exc:
         return f"❌ <b>{symbol}</b> ma'lumot olishda xato: {str(exc)[:120]}"
@@ -386,12 +395,12 @@ async def analyze_on_demand(symbol_raw: str, chat_id=None) -> str:
             post_signal(symbol, snap, sig, sig_id, ctx_str, kb=kb, chat_id=chat_id)
             return ""  # already sent as a full signal + chart
         send_chart(symbol, snap, None, chat_id=chat_id)
-        return (f"📊 <b>{symbol}</b> — tahlil qilindi, lekin signal BERILMADI\n"
-                f"Sabab: risk filtri ({why})\n🌐 {ctx_str}")
+        return (f"📊 <b>{symbol}</b> ({tf}) — tahlil qilindi, lekin signal BERILMADI\n"
+                f"Sabab: {why}")
     send_chart(symbol, snap, None, chat_id=chat_id)
-    return (f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n"
+    return (f"📊 <b>{symbol}</b> ({tf}) — hozir kuchli setup yo'q\n"
             f"💡 {sig.get('reason', 'kriteriylarga mos kelmadi')}\n"
-            f"Ishonch: {sig.get('score', 0)}/10\n🌐 {ctx_str}")
+            f"Ishonch: {sig.get('score', 0)}/10")
 
 
 async def handle_command(text: str, chat_id=None):
@@ -410,13 +419,18 @@ async def handle_command(text: str, chat_id=None):
                       reply_markup=telegram.coins_keyboard(), chat_id=chat_id)
     elif cmd in ("analyze", "analiz", "a"):
         if not arg:
-            telegram.send("Foydalanish: <code>/analyze BTC</code> yoki <code>/analyze EURUSD</code>",
+            telegram.send("Foydalanish: <code>/analyze BTC</code> yoki <code>/analyze EURUSD 15m</code>",
                           reply_markup=telegram.main_keyboard(), chat_id=chat_id)
             return
-        telegram.send(f"🔍 <b>{arg.upper()}</b> tahlil qilinmoqda...", chat_id=chat_id)
-        msg = await analyze_on_demand(arg, chat_id=chat_id)
-        if msg:
-            telegram.send(msg, chat_id=chat_id)
+        tf_arg = tokens[idx + 2].lower() if len(tokens) > idx + 2 else None
+        if tf_arg in TF_CONTEXT:
+            telegram.send(f"🔍 <b>{arg.upper()}</b> ({tf_arg}) tahlil qilinmoqda...", chat_id=chat_id)
+            msg = await analyze_on_demand(arg, chat_id=chat_id, tf=tf_arg)
+            if msg:
+                telegram.send(msg, chat_id=chat_id)
+        else:
+            telegram.send(f"⏱ <b>{arg.upper()}</b> — qaysi vaqt oralig'ida tahlil qilay?",
+                          reply_markup=telegram.tf_keyboard(arg.upper()), chat_id=chat_id)
     elif cmd in ("balance", "balans", "portfel"):
         if not config.trading_enabled():
             telegram.send(
@@ -507,14 +521,19 @@ async def telegram_poller():
                     elif action in ("coin", "tv"):
                         symbol = sid
                         cb_chat = cb.get("message", {}).get("chat", {}).get("id")
-                        telegram.send(f"🔍 <b>{symbol}</b> tahlil qilinmoqda...", chat_id=cb_chat)
+                        telegram.send(f"⏱ <b>{symbol}</b> — qaysi vaqt oralig'ida tahlil qilay?",
+                                      reply_markup=telegram.tf_keyboard(symbol), chat_id=cb_chat)
+                    elif action == "tf":
+                        symbol, _, tf = sid.partition("|")
+                        cb_chat = cb.get("message", {}).get("chat", {}).get("id")
+                        telegram.send(f"🔍 <b>{symbol}</b> ({tf}) tahlil qilinmoqda...", chat_id=cb_chat)
                         try:
-                            msg = await analyze_on_demand(symbol, chat_id=cb_chat)
+                            msg = await analyze_on_demand(symbol, chat_id=cb_chat, tf=tf)
                             if msg:
                                 telegram.send(msg, chat_id=cb_chat)
                         except Exception:
                             telegram.send(f"❌ <b>{symbol}</b> tahlilida xato — qayta urinib ko'ring.", chat_id=cb_chat)
-                            print(f"[coin-cb] error {symbol}:\n{traceback.format_exc()}")
+                            print(f"[tf-cb] error {symbol}:\n{traceback.format_exc()}")
                     continue
                 msg = u.get("message", {})
                 text = msg.get("text", "")

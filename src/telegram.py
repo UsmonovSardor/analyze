@@ -132,6 +132,14 @@ def main_keyboard() -> dict:
     }
 
 
+def tf_keyboard(symbol: str) -> dict:
+    """Timeframe chooser shown after a coin is tapped — analysis runs on that TF."""
+    tfs = [("⚡ 15m", "15m"), ("🕐 1h", "1h"), ("🕓 4h", "4h"), ("📅 1d", "1d")]
+    return {"inline_keyboard": [[
+        {"text": label, "callback_data": f"tf:{symbol}|{tf}"} for label, tf in tfs
+    ]]}
+
+
 def coins_keyboard() -> dict:
     """Inline keyboard with crypto, forex, stocks — tap to analyze on demand."""
     from . import config
@@ -313,7 +321,7 @@ def format_signal(sig: dict, sig_id: int, market_ctx: str = "") -> str:
     else:
         lines.append(f"\n💡 {reason}")
     if market_ctx:
-        lines.append(f"🌐 <i>{market_ctx}</i>")
+        lines.append(f"<i>{market_ctx}</i>")
     lines.append("⚠️ <i>Moliyaviy maslahat emas · risk 1%</i>")
     return "\n".join(lines)
 

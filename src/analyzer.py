@@ -99,25 +99,29 @@ def _hint_str(setup_hint) -> tuple[str, str]:
 def build_prompt(snap, setup_hint, btc_snap, perf: dict | None = None, short: bool = False) -> str:
     e1h, e4h, ebtc = (30, 20, 15) if short else (60, 50, 30)
     setup, side = _hint_str(setup_hint)
+    tf_e = snap.get("tf_entry", "1h")
+    tf_c = snap.get("tf_ctx", "4h")
+    btc_note = "" if "/" in snap["symbol"] else " (context only — this instrument is NOT crypto)"
     return f"""Analyze this candidate setup. Screener hint: Setup {setup}, direction {side.upper()} (verify it yourself, the hint may be wrong).
+Timeframes: entry TF = {tf_e}, higher context TF = {tf_c}. Apply every 1h/4h rule in the skill to THESE timeframes.
 {_performance_note(perf or {})}
 SYMBOL: {snap['symbol']}
 
-=== 1h candles with indicators (newest last) ===
+=== {tf_e} candles with indicators (newest last) ===
 {df_for_prompt(snap['entry_tf'], e1h)}
 
-=== 4h candles with indicators (newest last) ===
+=== {tf_c} candles with indicators (newest last) ===
 {df_for_prompt(snap['context_tf'], e4h)}
 
-1h resistance levels: {snap['resistance_1h']}
-1h support levels: {snap['support_1h']}
-4h resistance levels: {snap['resistance_4h']}
-4h support levels: {snap['support_4h']}
+{tf_e} resistance levels: {snap['resistance_1h']}
+{tf_e} support levels: {snap['support_1h']}
+{tf_c} resistance levels: {snap['resistance_4h']}
+{tf_c} support levels: {snap['support_4h']}
 
-=== BTC 4h context (newest last) ===
+=== BTC 4h context (newest last){btc_note} ===
 {df_for_prompt(btc_snap['context_tf'], ebtc)}
 
-Follow the skill process exactly. Output ONLY the JSON object."""
+Follow the skill process exactly. ALL text fields (reason, reasoning, confirmations) MUST be in UZBEK. Output ONLY the JSON object."""
 
 
 def _parse_json(text: str, symbol: str) -> dict:
