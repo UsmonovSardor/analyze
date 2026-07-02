@@ -144,7 +144,7 @@ TV_SYMBOLS = [
     {"symbol": "AUDUSD", "exchange": "FX", "screener": "forex"},
 
     # ── Commodities ───────────────────────────────────────────────────────
-    {"symbol": "XAUUSD", "exchange": "TVC", "screener": "cfd"},
+    {"symbol": "XAUUSD", "exchange": "OANDA", "screener": "cfd"},
 ]
 
 # ── Forex/Stocks for /coins keyboard ───────────────────────────────────────
@@ -152,7 +152,7 @@ FOREX_SYMBOLS = [
     {"symbol": "EURUSD", "exchange": "FX",    "screener": "forex"},
     {"symbol": "GBPUSD", "exchange": "FX",    "screener": "forex"},
     {"symbol": "USDJPY", "exchange": "FX",    "screener": "forex"},
-    {"symbol": "XAUUSD", "exchange": "TVC", "screener": "cfd"},
+    {"symbol": "XAUUSD", "exchange": "OANDA", "screener": "cfd"},
 ]
 
 STOCK_SYMBOLS = [
