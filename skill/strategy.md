@@ -88,22 +88,27 @@ BTC bull). All other rejection rules apply with direction reversed.
 
 ---
 
-## Confluence Scorecard (need ≥ 6 to pass)
+## Confluence Scorecard (need ≥ 8 to pass — NO EXCEPTIONS)
 
 | # | Factor | Points | How to judge |
 |---|--------|--------|--------------|
-| 1 | **4h trend aligned** (EMA50 > EMA200, price above both) | 2 | Both required for 2 pts; price only above EMA200 but EMA50 below = 1 pt |
-| 2 | **Entry at a real level** (EMA50, prior breakout, swing support, midpoint of a long white candle) | 2 | Structure-based level = 2 pts; vague zone = 1 pt |
-| 3 | **Volume confirms** (low volume pullback + volume expansion at entry, OR breakout volume ≥ 1.5×) | 2 | Clear confirmation = 2 pts; borderline = 1 pt; volume against = 0 pts |
-| 4 | **RSI agrees** (reset below 45, now turning up; no bearish divergence) | 1 | RSI divergence present = automatic 0 pts here |
-| 5 | **BTC context supportive or neutral** (BTC 4h not in downtrend) | 1 | BTC actively falling on 4h = 0 pts |
-| 6 | **Clean room above** (nearest resistance ≥ 2R away from entry) | 1 | Major resistance < 1R = reject entire trade |
-| 7 | **Candle quality** (hammer/engulfing/morning star/strong bull bar at the exact entry level) | 1 | Per candlestick-patterns.md |
+| 1 | **4h trend aligned** (EMA50 > EMA200, price above both) | 2 | Both required for 2 pts; price above EMA200 only = 1 pt; neither = 0, reject |
+| 2 | **Entry at a real level** (EMA50, prior breakout, swing S/R, 4h pivot, FVG, order block) | 2 | Two or more levels coincide = 2 pts; single clear level = 1 pt; vague zone = 0 pts |
+| 3 | **Volume confirms** (pullback volume < impulse avg AND entry bar volume ≥ 1.2× avg) | 2 | Both conditions met = 2 pts; one met = 1 pt; neither = 0 pts |
+| 4 | **RSI/MACD momentum aligned** (RSI reset below 45 + turning up; MACD histogram flipping positive) | 1 | RSI divergence present = automatic 0 pts AND reject the whole trade |
+| 5 | **BTC / macro context supportive** (BTC 4h bullish or neutral for longs; bearish for shorts) | 1 | BTC actively falling on 4h during a long = 0 pts |
+| 6 | **Clean room to TP2** (nearest resistance ≥ 2.5R away from entry) | 1 | Resistance < 1.5R = reject entire trade; 1.5–2.5R = 0 pts here but trade allowed |
+| 7 | **Nison candle confirmed** (hammer/engulfing/morning star/strong bull bar at exact entry level) | 1 | Weak or absent pattern = 0 pts |
+| 8 | **ICT confluence present** (order block / FVG / liquidity sweep / breaker at entry zone) | 1 | At least one ICT factor present = 1 pt; none = 0 pts |
+| 9 | **Brooks structure quality** (two-leg pullback OR clean breakout with low-volume retest) | 1 | Single-leg pullback with no extra confirmation = 0 pts |
+| 10 | **5-Strategy Gate passed** (≥5 families confirmed per Step 5 above) | 1 | If gate not passed, entire trade is rejected regardless of score |
 
-Score every factor explicitly. State the exact points for each. A score < 6 = reject without exception.
-For shorts, score each factor as its mirror (trend DOWN aligned, breakdown volume, RSI rolling over, etc.).
+**Maximum score: 13 points. Minimum to signal: 8 points.**
+Score every factor explicitly. State exact points. A score of 7/13 that "looks great" is still 7/13 — reject.
+For shorts, score each factor as its mirror (trend DOWN, RSI rolling over, breakdown volume, etc.).
 
-**From Market Wizards**: "Risk control is the #1 common denominator among ALL top traders." A setup with 6/10 that looks amazing is still a 6/10. Do not negotiate with the minimum.
+**From Market Wizards**: "Risk control is the #1 common denominator among ALL top traders."
+**From Livermore**: "The money is made by sitting, not trading." Wait for the perfect setup.
 
 ---
 

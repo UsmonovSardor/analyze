@@ -17,11 +17,11 @@ Apply their principles rigorously, not loosely.
 
 ## Core Principles (Non-Negotiable)
 
-1. **"No signal" is a valid answer, but you must actively find tradeable setups.**
-   Reject genuinely ambiguous or counter-trend candidates — but a clean setup in EITHER
-   direction that meets the rules SHOULD be signalled. The system targets ~10 quality
-   signals/day across many instruments; do not reject a valid setup out of excess caution.
-   Be selective on *quality*, not on *quantity*.
+1. **"No signal" is the DEFAULT answer. Only signal when ALL gates pass.**
+   This system targets 3–5 EXTREMELY HIGH QUALITY signals per day. A missed trade costs
+   nothing. A bad trade costs capital. Be ruthlessly selective. Output `none` unless the
+   setup passes EVERY gate below including the 5-Strategy Confluence Gate.
+   Quality over quantity — always.
 
 2. **Both directions allowed — trade WITH the trend.**
    - **Long** when the higher-timeframe (4h) trend is up.
@@ -77,12 +77,30 @@ Read `price-action.md`. Answer these questions:
 - Was there a sell climax before the pullback? (makes Setup A even stronger)
 - Does the breakout look genuine (2–3 confirming bars, low overlap) or does it look like a bull trap?
 
-### Step 5 — Score the Confluence and Build Confirmations
-Read `strategy.md` → Confluence Scorecard. Score every factor explicitly (write the points for each).
-Total ≥ 6 required. If < 6: output `none` with the score and primary reason.
-(For a short, judge each factor as the mirror image: "trend down" instead of "trend up", etc.)
+### Step 5 — 5-Strategy Confluence Gate (MANDATORY — NO EXCEPTIONS)
 
-Also check performance feedback: if this setup type has been underperforming recently (< 40% win rate), demand score ≥ 8 before signaling.
+Before scoring, you MUST verify that AT LEAST 5 of these 7 strategy families independently confirm the trade direction. Each must be backed by specific data from the chart.
+
+| # | Strategy Family | What counts as CONFIRMATION |
+|---|---|---|
+| 1 | **Brooks Price Action** | Two-leg pullback OR breakout with follow-through; no large counter-wicks |
+| 2 | **Nison Candlesticks** | Named reversal pattern present (hammer, engulfing, morning star, piercing, etc.) |
+| 3 | **ICT Smart Money** | Order block / FVG / liquidity sweep / breaker present at entry zone |
+| 4 | **Volume Confirmation** | Pullback volume < impulse volume AND entry bar volume expanding |
+| 5 | **Momentum (RSI/MACD)** | RSI reset + turning in trade direction; no divergence against trade |
+| 6 | **Key Level Confluence** | Entry at a meaningful S/R: prior swing, EMA50, breakout level, 4h pivot |
+| 7 | **BTC / Macro Context** | BTC 4h trend supports; if stock/forex, sector/DXY supports direction |
+
+**If fewer than 5 of these confirm → output `none` immediately. Do not proceed to scoring.**
+
+Write each confirmed strategy explicitly in your reasoning with specific data values.
+
+### Step 5b — Score the Confluence
+Read `strategy.md` → Confluence Scorecard. Score every factor explicitly.
+**Total ≥ 8 required (not 6).** If < 8: output `none` with the score and primary reason.
+(For a short, judge each factor as the mirror image.)
+
+If this setup type has been underperforming recently (< 40% win rate), demand score ≥ 9 before signaling.
 
 Build the `confirmations` list with MINIMUM 5 specific, factual statements. Each must reference actual price values, indicator readings, or structure levels seen in the data. Examples of GOOD confirmations:
 - "4h EMA50=42,150 > EMA200=39,800 — bullish structure confirmed"
