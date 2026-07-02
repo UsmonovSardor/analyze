@@ -9,11 +9,10 @@ import traceback
 from . import chart, config, journal, risk, screener, telegram
 from .analyzer import analyze
 from .data import _exchange as _px
-from .data import snapshot
+from .data import snapshot, snapshot_yf, yf_last_and_range, market_open
 
-# ── TradingView optional imports ─────────────────────────────────────────────
-if config.USE_TV_SCREENER:
-    from .screener_tv import find_candidate_tv, btc_context_ok_tv, tv_symbol_to_ccxt
+# TradingView is only used by the webhook path now — scanning is ccxt + yfinance.
+from .screener_tv import tv_symbol_to_ccxt
 
 if config.WEBHOOK_ENABLED:
     from .webhook_server import run_webhook_server, init_queue as _init_webhook_queue
@@ -66,7 +65,9 @@ def post_signal(symbol: str, snap: dict, sig: dict, sig_id: int, ctx_str: str,
 def send_outcome_chart(row: dict, exit_price: float, r_val: float, event: str):
     """Post the closed-trade chart with the exit marked and WIN/LOSS banner."""
     try:
-        snap = snapshot(row["symbol"], config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+        info = config.noncrypto_info(row["symbol"])
+        snap = (snapshot_yf(row["symbol"], info["yf"]) if info else
+                snapshot(row["symbol"], config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES))
         sig = {"signal": row.get("side", "long"), "symbol": row["symbol"], "setup": row.get("setup"),
                "score": row.get("score"), "entry": row["entry"], "stop_loss": row["stop_loss"],
                "tp1": row["tp1"], "tp2": row["tp2"], "tp3": row["tp3"]}
@@ -126,8 +127,10 @@ def market_context(btc_snap) -> str:
 
 
 async def _process_candidate(symbol: str, snap: dict, hint: str,
-                             btc_snap: dict, perf: dict, ctx_str: str):
-    """Shared logic: run Claude → risk → Telegram for one candidate."""
+                             btc_snap: dict, perf: dict, ctx_str: str,
+                             cur_price: float | None = None):
+    """Shared logic: run Claude → risk → Telegram for one candidate.
+    cur_price: pass for non-crypto instruments (no Binance ticker for them)."""
     if journal.signals_today() >= config.MAX_SIGNALS_PER_DAY:
         print("[scan] daily signal cap reached")
         return False
@@ -141,33 +144,37 @@ async def _process_candidate(symbol: str, snap: dict, hint: str,
     if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
         print("[scan] Claude daily call budget exhausted")
         return False
+    # Correlation guard: alts move together — N same-side crypto signals are one
+    # correlated bet, not N independent trades.
+    if "/" in symbol and isinstance(hint, dict):
+        side = hint.get("side", "long")
+        same = [r for r in journal.open_signals()
+                if "/" in r["symbol"] and r.get("side") == side]
+        if len(same) >= config.MAX_SAME_SIDE_CRYPTO:
+            print(f"[scan] {symbol}: {len(same)} open crypto {side}s — correlation guard")
+            return False
 
     print(f"[scan] candidate {symbol} setup {hint} -> Claude")
     journal.bump_claude_calls()
     sig = await analyze(snap, hint, btc_snap, perf)
 
-    ok, why = risk.validate(sig, last_price(symbol))
+    price = cur_price if cur_price is not None else last_price(symbol)
+    ok, why = risk.validate(sig, price)
     if not ok:
         print(f"[risk] {symbol} rejected: {why}")
         _mark_rejected(symbol)
         return False
 
     sig_id = journal.add_signal(sig)
-    can_auto = config.can_autotrade_side(sig.get("signal", "long"))
-    kb = telegram.execute_keyboard(sig_id, allow_auto=can_auto) if config.trading_enabled() else None
+    is_crypto = "/" in symbol
+    can_auto = is_crypto and config.can_autotrade_side(sig.get("signal", "long"))
+    kb = (telegram.execute_keyboard(sig_id, allow_auto=can_auto)
+          if is_crypto and config.trading_enabled() else None)
     post_signal(symbol, snap, sig, sig_id, ctx_str, kb=kb)   # grafik + reja + tugmalar = BITTA xabar
     if can_auto and config.TRADING_MODE == "auto":
         _try_execute(sig_id)
     print(f"[signal] #{sig_id} {symbol} posted")
     return True
-
-
-def _find_tv_info(symbol: str) -> dict | None:
-    """Find TV config dict for forex/stocks by symbol name."""
-    for s in config.FOREX_SYMBOLS + config.STOCK_SYMBOLS:
-        if s["symbol"].upper() == symbol.upper():
-            return s
-    return None
 
 
 async def _tv_analysis_async(symbol: str, exchange: str, screener: str, tf: str):
@@ -176,52 +183,10 @@ async def _tv_analysis_async(symbol: str, exchange: str, screener: str, tf: str)
     return await asyncio.to_thread(get_tv_analysis, symbol, exchange, screener, tf)
 
 
-async def _find_candidate_tv_async(tv_sym: dict):
-    """Non-blocking wrapper for find_candidate_tv."""
-    from .screener_tv import find_candidate_tv
-    return await asyncio.to_thread(find_candidate_tv, tv_sym)
-
-
-async def _process_tv_noncrpyto(tv_sym: dict, hint, perf: dict, ctx_label: str) -> bool:
-    """Run Gemini analysis for forex/stocks/indices using tradingview-ta data."""
-    from .screener_tv import get_tv_analysis
-    from .analyzer import analyze_tv_direct
-
-    symbol = tv_sym["symbol"]
-    if journal.signals_today() >= config.MAX_SIGNALS_PER_DAY:
-        return False
-    if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
-        return False
-    if journal.recent_signal_for(symbol, config.COOLDOWN_HOURS_PER_SYMBOL):
-        return False
-    if _recently_rejected(symbol):
-        return False
-
-    e1h = await _tv_analysis_async(symbol, tv_sym["exchange"], tv_sym["screener"], "1h")
-    e4h = await _tv_analysis_async(symbol, tv_sym["exchange"], tv_sym["screener"], "4h")
-    current_price = float(e1h.indicators.get("close", 0))
-    if not current_price:
-        return False
-
-    side = hint.get("side", "long") if isinstance(hint, dict) else "long"
-    print(f"[scan-tv] {symbol} -> Gemini (non-crypto, {side})")
-    journal.bump_claude_calls()
-    sig = await analyze_tv_direct(symbol, e1h, e4h, hint, perf)
-    sig["symbol"] = symbol
-
-    ok, why = risk.validate(sig, current_price)
-    if not ok:
-        print(f"[risk] {symbol} rejected: {why}")
-        _mark_rejected(symbol)
-        return False
-
-    sig_id = journal.add_signal(sig)
-    telegram.send(telegram.format_signal(sig, sig_id, ctx_label))
-    print(f"[signal] #{sig_id} {symbol} posted")
-    return True
-
-
 async def scan_once(notify_chat_id=None):
+    """Unified scan: crypto via ccxt (fast, no rate limits) + forex/gold/stocks via
+    Yahoo Finance. One data source per instrument = the screener sees exactly what
+    Gemini sees, so hints are never counter-trend."""
     def _notify(msg: str):
         if notify_chat_id:
             telegram.send(msg, chat_id=notify_chat_id)
@@ -229,110 +194,21 @@ async def scan_once(notify_chat_id=None):
     btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
     perf    = journal.setup_performance(30)
     ctx_str = market_context(btc_snap)
+    btc_ok  = screener.btc_context_ok(btc_snap)
+    btc_status = "📈 ko'tarilish" if btc_ok else "📉 pasayish (faqat SHORT)"
 
-    btc_ok = btc_context_ok_tv() if config.USE_TV_SCREENER else screener.btc_context_ok(btc_snap)
-    btc_status = "📈 ko'tarilish" if btc_ok else "📉 pasayish (crypto o'tkaziladi)"
+    open_nc = [i for i in config.NONCRYPTO_SYMBOLS if market_open(i["kind"])]
+    _notify(
+        f"🔍 <b>Skanerlash boshlandi</b>\n"
+        f"BTC: {btc_status}\n"
+        f"✅ Crypto: {len(config.SYMBOLS)} ta\n"
+        f"✅ Forex/Oltin/Aksiya: {len(open_nc)} ta (bozor ochiq)\n"
+        f"<i>~1-2 daqiqa...</i>"
+    )
 
-    # ── TradingView screener path ─────────────────────────────────────────
-    if config.USE_TV_SCREENER:
-        crypto_syms  = [s for s in config.TV_SYMBOLS if tv_symbol_to_ccxt(s)]
-        noncrypto    = [s for s in config.TV_SYMBOLS if not tv_symbol_to_ccxt(s)]
-        forex_syms   = [s for s in noncrypto if s["screener"] == "forex"]
-        stock_syms   = [s for s in noncrypto if s["screener"] == "america"]
+    signals_found = errors = 0
 
-        crypto_line = (f"✅ Crypto: {len(crypto_syms)} ta (long+short)" if btc_ok
-                       else f"📉 Crypto: {len(crypto_syms)} ta (BTC pastda — faqat SHORT)")
-        _notify(
-            f"🔍 <b>Skanerlash boshlandi</b>\n"
-            f"BTC: {btc_status}\n"
-            f"{crypto_line}\n"
-            f"✅ Forex/Oltin: {len(forex_syms)} ta\n"
-            f"✅ US Aksiyalar: {len(stock_syms)} ta\n"
-            f"<i>Iltimos kuting (~3-5 daqiqa)...</i>"
-        )
-
-        signals_found = 0
-        skipped_429   = 0
-
-        async def _tv_with_backoff(coro_factory, symbol: str) -> tuple:
-            """Run coro_factory() with up to 2 retries on 429 (a coroutine can only be
-            awaited once, so a factory is required — awaiting the same coro twice raises)."""
-            delays = [15, 45]
-            for attempt, delay in enumerate(delays + [None]):
-                try:
-                    return True, await coro_factory()
-                except Exception as exc:
-                    if "429" not in str(exc) or attempt == len(delays):
-                        return False, exc
-                    print(f"[scan-tv] 429 on {symbol}, retry in {delay}s (attempt {attempt+1})")
-                    await asyncio.sleep(delay)
-            return False, None
-
-        for tv_sym in config.TV_SYMBOLS:
-            ccxt_symbol = tv_symbol_to_ccxt(tv_sym)
-            ok, result = await _tv_with_backoff(
-                lambda: _find_candidate_tv_async(tv_sym), tv_sym["symbol"])
-            rate_limited = False
-            if ok:
-                hint = result
-            else:
-                exc = result
-                if exc and "429" in str(exc):
-                    skipped_429 += 1
-                    rate_limited = True
-                    hint = None
-                else:
-                    print(f"[scan-tv] error on {tv_sym['symbol']}: {exc}")
-                    continue
-
-            if ccxt_symbol:
-                if not hint and not rate_limited:
-                    continue
-                try:
-                    snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
-                        ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-                    if hint is None:
-                        # TV rate-limited — ccxt screener keeps the scan alive.
-                        hint = screener.find_candidate(snap)
-                        if hint:
-                            print(f"[scan-tv] {tv_sym['symbol']}: TV 429 — ccxt fallback hint {hint}")
-                    if not hint:
-                        continue
-                    hint = align_hint(hint, snap)
-                    # When BTC 4h is bearish, block crypto LONGS but still allow SHORTS.
-                    if not btc_ok and hint.get("side") == "long":
-                        continue
-                    sent = await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
-                    if sent:
-                        signals_found += 1
-                except Exception:
-                    print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
-            else:
-                if not hint:
-                    continue
-                try:
-                    sent = await _process_tv_noncrpyto(tv_sym, hint, perf, f"{tv_sym['symbol']} • {tv_sym['screener'].upper()}")
-                    if sent:
-                        signals_found += 1
-                except Exception:
-                    print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
-
-        print(f"[scan] done: {signals_found} signal(s), {skipped_429} symbol(s) TV rate-limited")
-
-        summary = f"✅ <b>Skanerlash tugadi</b>\n"
-        if signals_found:
-            summary += f"🎯 <b>{signals_found} ta signal topildi!</b>\n"
-        else:
-            summary += f"📊 Hozir kuchli setup topilmadi\n"
-        if skipped_429:
-            summary += f"⚠️ {skipped_429} ta symbol TradingView cheklovida o'tkazildi (20-30 daqiqada o'z-o'zidan ochiladi)"
-        _notify(summary)
-        return
-
-    # ── Original ccxt screener path ───────────────────────────────────────
-    if not btc_ok:
-        _notify("📉 <b>BTC pasayish trendida</b> — faqat SHORT setuplar qidirilmoqda.")
-    signals_found = 0
+    # ── Crypto (ccxt/Binance) ─────────────────────────────────────────────
     for symbol in config.SYMBOLS:
         try:
             snap = btc_snap if symbol == "BTC/USDT" else snapshot(
@@ -340,17 +216,36 @@ async def scan_once(notify_chat_id=None):
             hint = screener.find_candidate(snap)
             if not hint:
                 continue
-            hint = align_hint(hint, snap)
-            # When BTC is bearish, block longs but allow shorts.
+            # When BTC 4h is bearish, block crypto LONGS but still allow SHORTS.
             if not btc_ok and hint.get("side") == "long":
                 continue
-            sent = await _process_candidate(symbol, snap, hint, btc_snap, perf, ctx_str)
-            if sent:
+            if await _process_candidate(symbol, snap, hint, btc_snap, perf, ctx_str):
                 signals_found += 1
         except Exception:
+            errors += 1
             print(f"[scan] error on {symbol}:\n{traceback.format_exc()}")
-    if not signals_found:
-        _notify("📊 <b>Skanerlash tugadi</b> — hozir kuchli setup topilmadi.")
+
+    # ── Forex / gold / stocks (Yahoo Finance) ─────────────────────────────
+    for inst in open_nc:
+        sym = inst["symbol"]
+        try:
+            snap = await asyncio.to_thread(snapshot_yf, sym, inst["yf"])
+            hint = screener.find_candidate(snap)
+            if not hint:
+                continue
+            cur = float(snap["entry_tf"]["close"].iloc[-1])
+            label = f"{sym} • {inst['kind'].upper()}"
+            if await _process_candidate(sym, snap, hint, btc_snap, perf, label, cur_price=cur):
+                signals_found += 1
+        except Exception:
+            errors += 1
+            print(f"[scan] error on {sym}:\n{traceback.format_exc()}")
+
+    print(f"[scan] done: {signals_found} signal(s), {errors} error(s)")
+    summary = "✅ <b>Skanerlash tugadi</b>\n"
+    summary += (f"🎯 <b>{signals_found} ta signal topildi!</b>" if signals_found
+                else "📊 Hozir kuchli setup topilmadi")
+    _notify(summary)
 
 
 def _try_execute(sig_id: int):
@@ -396,10 +291,16 @@ def check_outcomes():
     for row in journal.open_signals():
         try:
             short = row.get("side") == "short"
-            price_now = last_price(row["symbol"])
-            hi = lo = price_now
-            for c in _px.fetch_ohlcv(row["symbol"], timeframe="5m", limit=3):
-                hi, lo = max(hi, c[2]), min(lo, c[3])
+            info = config.noncrypto_info(row["symbol"])
+            if info:
+                if not market_open(info["kind"]):
+                    continue  # market closed — prices are stale, skip this cycle
+                price_now, hi, lo = yf_last_and_range(info["yf"])
+            else:
+                price_now = last_price(row["symbol"])
+                hi = lo = price_now
+                for c in _px.fetch_ohlcv(row["symbol"], timeframe="5m", limit=3):
+                    hi, lo = max(hi, c[2]), min(lo, c[3])
 
             # After TP1/TP2 the stop trails to breakeven (entry).
             effective_sl = row["entry"] if row["status"] in ("tp1", "tp2") else row["stop_loss"]
@@ -433,100 +334,56 @@ def check_outcomes():
 
 
 def _resolve_symbol(raw: str):
-    """Map a user-typed symbol to ('crypto', 'BTC/USDT') or ('tv', tv_info_dict).
-    Forex/stocks/gold resolve to their TradingView config; everything else is crypto."""
-    s = raw.strip().upper().replace("-", "/").replace("/", "")
-    # Try TV non-crypto first (forex, gold, stocks)
-    for info in config.FOREX_SYMBOLS + config.STOCK_SYMBOLS:
-        if info["symbol"].upper() == s:
-            return "tv", info
-    # Also match any non-crypto in the full TV list
-    for info in config.TV_SYMBOLS:
-        if info["symbol"].upper() == s and info["screener"] != "crypto":
-            return "tv", info
-    # Crypto: normalise to ccxt pair
-    if s.endswith("USDT"):
-        base = s[:-4]
-    elif s.endswith("USDC"):
-        base = s[:-4]
-    else:
-        base = s
+    """Map user input to ('nc', info_dict) for forex/gold/stocks or ('crypto', 'BTC/USDT')."""
+    s = raw.strip().upper().replace("-", "").replace("/", "")
+    info = config.noncrypto_info(s)
+    if info:
+        return "nc", info
+    base = s[:-4] if s.endswith(("USDT", "USDC")) else s
     return "crypto", f"{base}/USDT"
 
 
 async def analyze_on_demand(symbol_raw: str, chat_id=None) -> str:
-    """Run a full Gemini analysis on any instrument (crypto/forex/stock), on request."""
+    """Full Gemini analysis + chart for any instrument (crypto/forex/gold/stock)."""
     if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
         return "⏳ Bugungi tahlil limiti tugadi, ertaga urinib ko'ring."
 
     kind, target = _resolve_symbol(symbol_raw)
+    symbol = target["symbol"] if kind == "nc" else target
 
-    # ── Forex / stocks / gold via TradingView ──────────────────────────────
-    if kind == "tv":
-        from .analyzer import analyze_tv_direct
-        symbol = target["symbol"]
-        # On-demand fetch with automatic 429 retry — the background scan may be
-        # mid-flight hammering TradingView, so wait it out instead of erroring.
-        e1h = e4h = None
-        last_exc = None
-        for wait in (0, 20, 40):
-            if wait:
-                await asyncio.sleep(wait)
-            try:
-                e1h = await _tv_analysis_async(target["symbol"], target["exchange"], target["screener"], "1h")
-                e4h = await _tv_analysis_async(target["symbol"], target["exchange"], target["screener"], "4h")
-                break
-            except Exception as exc:
-                last_exc = exc
-                if "429" not in str(exc):
-                    return f"❌ <b>{symbol}</b> ma'lumot olishda xato: {str(exc)[:120]}"
-        if e1h is None or e4h is None:
-            return f"⏳ <b>{symbol}</b> — TradingView band (skan ketmoqda), 2-3 daqiqadan keyin urinib ko'ring."
-        cur_price = float(e1h.indicators.get("close", 0))
-        if not cur_price:
-            return f"❌ <b>{symbol}</b> narx ma'lumoti topilmadi."
-        # Derive the hint side from the 4h EMA trend we already fetched — no extra
-        # TradingView calls; Gemini re-verifies the direction anyway.
-        i4 = e4h.indicators
-        down = i4.get("close", 0) < i4.get("EMA200", 0) and i4.get("EMA50", 0) < i4.get("EMA200", 0)
-        hint = {"setup": "TV", "side": "short" if (down and config.ALLOW_SHORTS) else "long"}
-        journal.bump_claude_calls()
-        sig = await analyze_tv_direct(symbol, e1h, e4h, hint, journal.setup_performance(30))
-        sig["symbol"] = symbol
-        ctx_label = f"{symbol} • {target['screener'].upper()}"
-        if sig.get("signal") in ("long", "short"):
-            ok, why = risk.validate(sig, cur_price)
-            if ok:
-                sig_id = journal.add_signal(sig)
-                telegram.send(telegram.format_signal(sig, sig_id, ctx_label), chat_id=chat_id)
-                return ""
-            return (f"📊 <b>{symbol}</b> — tahlil qilindi, signal BERILMADI\n"
-                    f"Sabab: risk filtri ({why})\nIshonch: {sig.get('score', 0)}/10")
-        return (f"📊 <b>{symbol}</b> — hozir kuchli setup yo'q\n"
-                f"💡 {sig.get('reason', 'kriteriylarga mos kelmadi')}\nIshonch: {sig.get('score', 0)}/10")
-
-    # ── Crypto via ccxt ────────────────────────────────────────────────────
-    symbol = target
     try:
         btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
-        snap = btc_snap if symbol == "BTC/USDT" else snapshot(
-            symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+        if kind == "nc":
+            if not market_open(target["kind"]):
+                return (f"🕐 <b>{symbol}</b> — bozor hozir yopiq "
+                        f"({'aksiya sessiyasi 18:30-01:00 Tashkent' if target['kind'] == 'stock' else 'forex dam olish kunlari yopiq'}).")
+            snap = await asyncio.to_thread(snapshot_yf, symbol, target["yf"])
+            ctx_str = f"{symbol} • {target['kind'].upper()}"
+            cur = float(snap["entry_tf"]["close"].iloc[-1])
+        else:
+            snap = btc_snap if symbol == "BTC/USDT" else snapshot(
+                symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+            ctx_str = market_context(btc_snap)
+            cur = last_price(symbol)
     except Exception as exc:
-        return f"❌ <b>{symbol}</b> ma'lumotini olishda xato: {str(exc)[:120]}"
+        return f"❌ <b>{symbol}</b> ma'lumot olishda xato: {str(exc)[:120]}"
 
-    hint = screener.find_candidate(snap) or {"setup": "A", "side": "long"}
-    hint = align_hint(hint, snap)
+    hint = screener.find_candidate(snap)
+    if not hint:
+        default_side = "short" if (trend_4h(snap) == "down" and config.ALLOW_SHORTS) else "long"
+        hint = {"setup": "A", "side": default_side}
     journal.bump_claude_calls()
     sig = await analyze(snap, hint, btc_snap, journal.setup_performance(30))
-    ctx_str = market_context(btc_snap)
 
     if sig.get("signal") in ("long", "short"):
-        ok, why = risk.validate(sig, last_price(symbol))
+        ok, why = risk.validate(sig, cur)
         if ok:
             sig_id = journal.add_signal(sig)
-            can_auto = config.can_autotrade_side(sig.get("signal", "long"))
-            kb = telegram.execute_keyboard(sig_id, allow_auto=can_auto) if config.trading_enabled() else None
-            post_signal(symbol, snap, sig, sig_id, ctx_str, kb=kb, chat_id=chat_id)  # BITTA xabar
+            is_crypto = kind == "crypto"
+            can_auto = is_crypto and config.can_autotrade_side(sig.get("signal", "long"))
+            kb = (telegram.execute_keyboard(sig_id, allow_auto=can_auto)
+                  if is_crypto and config.trading_enabled() else None)
+            post_signal(symbol, snap, sig, sig_id, ctx_str, kb=kb, chat_id=chat_id)
             return ""  # already sent as a full signal + chart
         send_chart(symbol, snap, None, chat_id=chat_id)
         return (f"📊 <b>{symbol}</b> — tahlil qilindi, lekin signal BERILMADI\n"
@@ -734,9 +591,25 @@ async def webhook_processor():
                 pass
 
 
+def _daily_digest() -> str:
+    n_sig  = journal.signals_today()
+    n_ai   = journal.claude_calls_today()
+    n_open = len(journal.open_signals())
+    header = "📬 <b>Kunlik hisobot</b>\n"
+    body = (f"🎯 Bugun: <b>{n_sig} ta signal</b>\n"
+            f"🧠 AI tahlillar: {n_ai}/{config.MAX_CLAUDE_CALLS_PER_DAY}\n"
+            f"📂 Ochiq signallar: {n_open}\n")
+    if n_sig == 0:
+        body += "<i>Bugun kuchli setup bo'lmadi — bot ishlayapti, sifat filtri qattiq turibdi.</i>"
+    return header + body
+
+
 async def scan_loop():
+    from datetime import datetime, timezone
     last_scan = last_outcome = 0.0
     last_weekly = time.time()
+    last_digest_day = None
+    last_err_alert = 0.0
     while True:
         try:
             now = time.time()
@@ -749,14 +622,26 @@ async def scan_loop():
             if now - last_weekly >= 7 * 86400:
                 last_weekly = now
                 telegram.send(telegram.format_weekly(journal.weekly_stats()))
+            utc = datetime.now(timezone.utc)
+            if utc.hour >= config.DIGEST_HOUR_UTC and last_digest_day != utc.date():
+                last_digest_day = utc.date()
+                telegram.send(_daily_digest())
         except Exception:
             print(f"[loop] error:\n{traceback.format_exc()}")
+            # Alert the chat about repeated failures, at most once per 2 hours.
+            if time.time() - last_err_alert > 2 * 3600:
+                last_err_alert = time.time()
+                try:
+                    telegram.send("⚠️ <b>Bot xatosi</b> — skanerlash siklida muammo, "
+                                  "loglarni tekshiring. Bot avtomatik davom etadi.")
+                except Exception:
+                    pass
         await asyncio.sleep(30)
 
 
 async def main():
     mode = config.TRADING_MODE if config.trading_enabled() else "off (signals only)"
-    screener_mode = "TradingView" if config.USE_TV_SCREENER else "ccxt"
+    screener_mode = "ccxt+yfinance (unified)"
     print(f"[boot] trading-signal-bot starting · trading={mode} · screener={screener_mode}")
 
     tasks = [scan_loop()]

@@ -35,18 +35,21 @@ def _gemini_client():
     return genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
 
 
+_MODEL_COOLDOWN: dict = {}   # model -> unix ts until which we skip it (quota exhausted)
+
+
 def _gemini_generate(prompt: str, model_name: str | None = None) -> str:
     """Call Gemini with automatic model fallback on 503."""
     import time as _time
     client = _gemini_client()
-    # config.GEMINI_MODEL env var used as primary; rest are fallbacks
-    env_model = config.GEMINI_MODEL
+    # Strongest model first (GEMINI_MODEL_FINAL, default 2.5-pro) — quota/503
+    # automatically falls through to the flash chain, so signals never stop.
     if model_name:
         models = [model_name]
-    elif env_model and env_model not in _GEMINI_MODELS_DEFAULT:
-        models = [env_model] + _GEMINI_MODELS_DEFAULT
     else:
-        models = [env_model] + [m for m in _GEMINI_MODELS_DEFAULT if m != env_model]
+        chain = [config.GEMINI_MODEL_FINAL, config.GEMINI_MODEL] + _GEMINI_MODELS_DEFAULT
+        models = list(dict.fromkeys(m for m in chain if m))
+        models = [m for m in models if _MODEL_COOLDOWN.get(m, 0) < _time.time()] or models
     last_exc = None
     for m in models:
         for attempt in range(2):
@@ -69,6 +72,8 @@ def _gemini_generate(prompt: str, model_name: str | None = None) -> str:
                     continue
                 # 404 (retired model), 400, quota etc. — don't kill the whole call,
                 # fall through to the next model in the chain.
+                if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                    _MODEL_COOLDOWN[m] = _time.time() + 600  # skip for 10 min
                 print(f"[gemini] {m} failed: {msg[:150]} — trying next model")
                 break
     raise last_exc

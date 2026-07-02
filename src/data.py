@@ -77,6 +77,90 @@ def snapshot(symbol: str, entry_tf: str, context_tf: str, candles: int) -> dict:
     }
 
 
+# ── Yahoo Finance source for forex / gold / stocks ──────────────────────────
+# Produces the exact same snapshot shape as the crypto path, so the whole
+# pipeline (screener → Gemini → risk → chart → outcome tracking) is shared.
+
+_YF_CACHE: dict = {}          # ticker -> (ts, DataFrame 1h)
+_YF_CACHE_TTL = 240           # seconds
+
+
+def _yf_hourly(ticker: str) -> pd.DataFrame:
+    import time as _t
+    import yfinance as yf
+    hit = _YF_CACHE.get(ticker)
+    if hit and _t.time() - hit[0] < _YF_CACHE_TTL:
+        return hit[1]
+    raw = yf.download(ticker, interval="1h", period="90d", progress=False,
+                      auto_adjust=True, multi_level_index=False)
+    if raw is None or raw.empty:
+        raise RuntimeError(f"yfinance: no data for {ticker}")
+    df = raw.reset_index()
+    ts_col = "Datetime" if "Datetime" in df.columns else "Date"
+    df = df.rename(columns={ts_col: "ts", "Open": "open", "High": "high",
+                            "Low": "low", "Close": "close", "Volume": "volume"})
+    df = df[["ts", "open", "high", "low", "close", "volume"]].dropna(subset=["close"])
+    df["ts"] = pd.to_datetime(df["ts"], utc=True)
+    _YF_CACHE[ticker] = (_t.time(), df)
+    return df
+
+
+def _resample_4h(df1h: pd.DataFrame) -> pd.DataFrame:
+    g = df1h.set_index("ts").resample("4h").agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+    ).dropna(subset=["close"]).reset_index()
+    return g
+
+
+def snapshot_yf(symbol: str, ticker: str, candles: int = 300) -> dict:
+    """Snapshot for non-crypto instruments — same shape as snapshot()."""
+    h1 = _yf_hourly(ticker)
+    e = add_indicators(h1.tail(candles).reset_index(drop=True).copy())
+    ctx = add_indicators(_resample_4h(h1).tail(candles).reset_index(drop=True).copy())
+    res, sup = swing_levels(e)
+    res4, sup4 = swing_levels(ctx, lookback=80)
+    return {
+        "symbol": symbol,
+        "entry_tf": e,
+        "context_tf": ctx,
+        "resistance_1h": res,
+        "support_1h": sup,
+        "resistance_4h": res4,
+        "support_4h": sup4,
+    }
+
+
+def yf_last_and_range(ticker: str) -> tuple[float, float, float]:
+    """(last, recent_high, recent_low) from the last ~3 5m bars — outcome checks."""
+    import yfinance as yf
+    raw = yf.download(ticker, interval="5m", period="1d", progress=False,
+                      auto_adjust=True, multi_level_index=False)
+    if raw is None or raw.empty:
+        raise RuntimeError(f"yfinance: no 5m data for {ticker}")
+    tail = raw.tail(3)
+    return float(tail["Close"].iloc[-1]), float(tail["High"].max()), float(tail["Low"].min())
+
+
+def market_open(kind: str) -> bool:
+    """Coarse market-hours gate (UTC). Crypto is always open."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    wd, hm = now.weekday(), now.hour + now.minute / 60
+    if kind in ("forex", "gold"):
+        # FX week: Sun 22:00 UTC – Fri 21:00 UTC
+        if wd == 5:
+            return False
+        if wd == 6 and hm < 22:
+            return False
+        if wd == 4 and hm >= 21:
+            return False
+        return True
+    if kind == "stock":
+        # NYSE/NASDAQ regular session 13:30–20:00 UTC, Mon–Fri
+        return wd < 5 and 13.5 <= hm < 20
+    return True
+
+
 def df_for_prompt(df: pd.DataFrame, rows: int = 60) -> str:
     cols = ["ts", "open", "high", "low", "close", "volume", "ema20", "ema50", "ema200", "rsi", "atr", "vol_avg20"]
     out = df[cols].tail(rows).copy()

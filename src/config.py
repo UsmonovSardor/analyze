@@ -32,9 +32,18 @@ ALLOW_SHORTS = os.getenv("ALLOW_SHORTS", "true").lower() == "true"
 # When BTC 4h is bearish, block crypto LONGS but still allow crypto SHORTS.
 BTC_GATE_BLOCKS_LONGS_ONLY = True
 
-# Gemini
+# Gemini — FINAL model makes the signal decision (strongest available);
+# falls back to flash models automatically on quota/503.
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL_FINAL = os.getenv("GEMINI_MODEL_FINAL", "gemini-2.5-pro")
 MAX_CLAUDE_CALLS_PER_DAY = int(os.getenv("MAX_CLAUDE_CALLS_PER_DAY", "150"))
+
+# Max simultaneously open crypto signals in the SAME direction (correlation guard:
+# five alt shorts are one big correlated bet, not five independent trades).
+MAX_SAME_SIDE_CRYPTO = int(os.getenv("MAX_SAME_SIDE_CRYPTO", "4"))
+
+# Daily digest hour (UTC). 16 UTC = 21:00 Tashkent.
+DIGEST_HOUR_UTC = int(os.getenv("DIGEST_HOUR_UTC", "16"))
 
 # Telegram
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -146,6 +155,29 @@ TV_SYMBOLS = [
     # ── Commodities ───────────────────────────────────────────────────────
     {"symbol": "XAUUSD", "exchange": "OANDA", "screener": "cfd"},
 ]
+
+# ── Non-crypto instruments: full OHLCV via Yahoo Finance ────────────────────
+# Same analysis pipeline as crypto (candle history, patterns, S/R, charts).
+# kind: "forex" | "gold" | "stock" — used for market-hours gating.
+NONCRYPTO_SYMBOLS = [
+    {"symbol": "EURUSD", "yf": "EURUSD=X", "kind": "forex"},
+    {"symbol": "GBPUSD", "yf": "GBPUSD=X", "kind": "forex"},
+    {"symbol": "USDJPY", "yf": "USDJPY=X", "kind": "forex"},
+    {"symbol": "AUDUSD", "yf": "AUDUSD=X", "kind": "forex"},
+    {"symbol": "XAUUSD", "yf": "GC=F", "kind": "gold"},
+    {"symbol": "AAPL",   "yf": "AAPL",     "kind": "stock"},
+    {"symbol": "NVDA",   "yf": "NVDA",     "kind": "stock"},
+    {"symbol": "TSLA",   "yf": "TSLA",     "kind": "stock"},
+    {"symbol": "MSFT",   "yf": "MSFT",     "kind": "stock"},
+    {"symbol": "AMZN",   "yf": "AMZN",     "kind": "stock"},
+    {"symbol": "META",   "yf": "META",     "kind": "stock"},
+]
+
+def noncrypto_info(symbol: str) -> dict | None:
+    for s in NONCRYPTO_SYMBOLS:
+        if s["symbol"].upper() == symbol.upper():
+            return s
+    return None
 
 # ── Forex/Stocks for /coins keyboard ───────────────────────────────────────
 FOREX_SYMBOLS = [

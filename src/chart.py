@@ -21,9 +21,24 @@ def render(symbol: str, snap: dict, sig: dict | None = None, result: dict | None
     e = snap["entry_tf"].tail(BARS).reset_index(drop=True)
     x = list(range(len(e)))
 
-    fig, ax = plt.subplots(figsize=(12, 7), dpi=110)
+    fig, (ax, axv) = plt.subplots(
+        2, 1, figsize=(12, 7.8), dpi=110, sharex=True,
+        gridspec_kw={"height_ratios": [4, 1], "hspace": 0.04})
     fig.patch.set_facecolor("#0e1117")
     ax.set_facecolor("#0e1117")
+    axv.set_facecolor("#0e1117")
+
+    # volume panel — expansion/contraction is half the story of every setup
+    vol_colors = ["#26a69a" if e["close"][i] >= e["open"][i] else "#ef5350" for i in x]
+    axv.bar(x, e["volume"], color=vol_colors, alpha=0.55, width=0.6, zorder=2)
+    if "vol_avg20" in e:
+        axv.plot(x, e["vol_avg20"], color="#ffa726", linewidth=1.0, alpha=0.8, zorder=3)
+    axv.set_ylabel("Vol", color="#9aa0aa", fontsize=8)
+    axv.grid(True, color="#2a2e39", linewidth=0.4, alpha=0.5)
+    axv.tick_params(colors="#9aa0aa", labelsize=8)
+    axv.yaxis.tick_right()
+    for sp in axv.spines.values():
+        sp.set_color("#2a2e39")
 
     # candlesticks
     for i in x:
@@ -106,13 +121,13 @@ def render(symbol: str, snap: dict, sig: dict | None = None, result: dict | None
 
     # x labels = time
     ticks = list(range(0, len(e), max(1, len(e) // 8)))
-    ax.set_xticks(ticks)
-    ax.set_xticklabels([e["ts"][i].strftime("%m-%d %H:%M") for i in ticks], rotation=0)
+    axv.set_xticks(ticks)
+    axv.set_xticklabels([e["ts"][i].strftime("%m-%d %H:%M") for i in ticks], rotation=0)
     ax.set_xlim(-1, len(e))
     ax.yaxis.tick_right()
 
     fig.text(0.99, 0.01, "⚠️ moliyaviy maslahat emas", color="#5a5f6a", fontsize=7, ha="right")
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.05, right=0.92, top=0.93, bottom=0.08)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", facecolor=fig.get_facecolor())
     plt.close(fig)
