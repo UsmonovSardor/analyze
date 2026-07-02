@@ -463,23 +463,33 @@ async def analyze_on_demand(symbol_raw: str, chat_id=None) -> str:
 
     # ── Forex / stocks / gold via TradingView ──────────────────────────────
     if kind == "tv":
-        from .screener_tv import get_tv_analysis, find_candidate_tv
         from .analyzer import analyze_tv_direct
         symbol = target["symbol"]
-        try:
-            e1h = await _tv_analysis_async(target["symbol"], target["exchange"], target["screener"], "1h")
-            e4h = await _tv_analysis_async(target["symbol"], target["exchange"], target["screener"], "4h")
-        except Exception as exc:
-            if "429" in str(exc):
-                return f"⏳ <b>{symbol}</b> — TradingView cheklovi, 1-2 daqiqadan keyin urinib ko'ring."
-            return f"❌ <b>{symbol}</b> ma'lumot olishda xato: {str(exc)[:120]}"
+        # On-demand fetch with automatic 429 retry — the background scan may be
+        # mid-flight hammering TradingView, so wait it out instead of erroring.
+        e1h = e4h = None
+        last_exc = None
+        for wait in (0, 20, 40):
+            if wait:
+                await asyncio.sleep(wait)
+            try:
+                e1h = await _tv_analysis_async(target["symbol"], target["exchange"], target["screener"], "1h")
+                e4h = await _tv_analysis_async(target["symbol"], target["exchange"], target["screener"], "4h")
+                break
+            except Exception as exc:
+                last_exc = exc
+                if "429" not in str(exc):
+                    return f"❌ <b>{symbol}</b> ma'lumot olishda xato: {str(exc)[:120]}"
+        if e1h is None or e4h is None:
+            return f"⏳ <b>{symbol}</b> — TradingView band (skan ketmoqda), 2-3 daqiqadan keyin urinib ko'ring."
         cur_price = float(e1h.indicators.get("close", 0))
         if not cur_price:
             return f"❌ <b>{symbol}</b> narx ma'lumoti topilmadi."
-        try:
-            hint = await asyncio.to_thread(find_candidate_tv, target) or {"setup": "TV", "side": "long"}
-        except Exception:
-            hint = {"setup": "TV", "side": "long"}
+        # Derive the hint side from the 4h EMA trend we already fetched — no extra
+        # TradingView calls; Gemini re-verifies the direction anyway.
+        i4 = e4h.indicators
+        down = i4.get("close", 0) < i4.get("EMA200", 0) and i4.get("EMA50", 0) < i4.get("EMA200", 0)
+        hint = {"setup": "TV", "side": "short" if (down and config.ALLOW_SHORTS) else "long"}
         journal.bump_claude_calls()
         sig = await analyze_tv_direct(symbol, e1h, e4h, hint, journal.setup_performance(30))
         sig["symbol"] = symbol

@@ -126,7 +126,6 @@ def main_keyboard() -> dict:
         "keyboard": [
             ["🪙 /coins", "🔄 /refresh"],
             ["📈 /stats", "📂 /open"],
-            ["💼 /balance"],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
@@ -369,7 +368,6 @@ def format_help() -> str:
         "🔄 <code>/refresh</code> — bozorni hozir skanerlash\n"
         "📈 <code>/stats</code> — haftalik statistika\n"
         "📂 <code>/open</code> — ochiq signallar\n"
-        "💼 <code>/balance</code> — Binance portfel holati\n\n"
         "Pastdagi tugmalardan foydalaning 👇\n"
         "⚠️ <i>Bu moliyaviy maslahat emas</i>"
     )
