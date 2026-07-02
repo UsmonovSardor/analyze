@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS signals (
     result_r REAL,
     -- live-trade execution fields (null until executed)
     executed INTEGER NOT NULL DEFAULT 0,
-    qty REAL, fill_price REAL, oco_id TEXT
+    qty REAL, fill_price REAL, oco_id TEXT,
+    sl_order_id TEXT,                     -- exchange stop-loss order id (for breakeven move)
+    sl_at_breakeven INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS claude_calls (day TEXT PRIMARY KEY, count INTEGER NOT NULL);
 """
@@ -30,6 +32,8 @@ _MIGRATIONS = [  # idempotent ADD COLUMN for DBs created before these fields exi
     ("signals", "fill_price", "REAL"),
     ("signals", "oco_id", "TEXT"),
     ("signals", "side", "TEXT NOT NULL DEFAULT 'long'"),
+    ("signals", "sl_order_id", "TEXT"),
+    ("signals", "sl_at_breakeven", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -65,10 +69,26 @@ def get_signal(sig_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def mark_executed(sig_id: int, qty: float, fill_price: float, oco_id: str | None):
+def mark_executed(sig_id: int, qty: float, fill_price: float, oco_id: str | None,
+                  sl_order_id: str | None = None):
     with conn() as c:
-        c.execute("UPDATE signals SET executed=1, qty=?, fill_price=?, oco_id=? WHERE id=?",
-                  (qty, fill_price, oco_id, sig_id))
+        c.execute("UPDATE signals SET executed=1, qty=?, fill_price=?, oco_id=?, sl_order_id=? WHERE id=?",
+                  (qty, fill_price, oco_id, sl_order_id, sig_id))
+
+
+def set_breakeven(sig_id: int, new_sl_order_id: str | None):
+    """Record that the exchange stop-loss has been moved to breakeven."""
+    with conn() as c:
+        c.execute("UPDATE signals SET sl_order_id=?, sl_at_breakeven=1 WHERE id=?",
+                  (new_sl_order_id, sig_id))
+
+
+def executed_open_signals():
+    """Open signals that have a real position on the exchange (for reconciliation)."""
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM signals WHERE executed=1 AND status IN ('open','tp1','tp2','breakeven')"
+        )]
 
 
 def open_signals():

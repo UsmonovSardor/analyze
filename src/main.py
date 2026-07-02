@@ -306,9 +306,10 @@ def _try_execute(sig_id: int):
         return "daily loss stop"
     res = exchange_trade.execute_signal(sig)
     if not res.get("ok"):
-        telegram.send(f"❌ Savdo bajarilmadi #{sig_id}: {res.get('error')}")
+        prefix = "🚨🚨 " if res.get("naked") else "❌ "
+        telegram.send(f"{prefix}Savdo bajarilmadi #{sig_id}: {res.get('error')}")
         return res.get("error")
-    journal.mark_executed(sig_id, res["qty"], res["fill"], res.get("oco_id"))
+    journal.mark_executed(sig_id, res["qty"], res["fill"], res.get("oco_id"), res.get("sl_order_id"))
     telegram.send(telegram.format_trade_filled(
         sig_id, sig["symbol"], res["qty"], res["fill"], res["oco"],
         side=res.get("side", sig.get("side", "long")), leverage=res.get("leverage")))
@@ -332,6 +333,23 @@ def realized_r(row: dict, exit_price: float) -> float:
         parts += 0.4 * sign * (row["tp2"] - e) / r
     remaining = {"open": 1.0, "tp1": 0.6, "tp2": 0.2}.get(row["status"], 1.0)
     return parts + remaining * sign * (exit_price - e) / r
+
+
+def _breakeven_on_exchange(row: dict):
+    """After TP1 fills, move the real exchange stop to entry so the runner can't become a loss."""
+    if not (config.futures_enabled() and row.get("executed") and not row.get("sl_at_breakeven")):
+        return
+    from . import exchange_trade
+    try:
+        res = exchange_trade.move_stop_to_breakeven(row)
+    except Exception:
+        print(f"[breakeven] #{row['id']} error:\n{traceback.format_exc()}")
+        return
+    if res.get("ok"):
+        journal.set_breakeven(row["id"], res.get("sl_order_id"))
+        telegram.send(f"🔒 #{row['id']} {row['symbol']} — stop breakeven'ga ko'chirildi (endi zarar bo'lmaydi).")
+    else:
+        telegram.send(f"⚠️ #{row['id']} stop breakeven'ga ko'chmadi: {res.get('error')}")
 
 
 def check_outcomes():
@@ -370,6 +388,7 @@ def check_outcomes():
             elif tp_reached(row["tp1"]) and row["status"] == "open":
                 journal.update_status(row["id"], "tp1")
                 telegram.send(telegram.format_outcome(row, "tp1"))
+                _breakeven_on_exchange(row)
         except Exception:
             print(f"[outcome] error on #{row['id']}:\n{traceback.format_exc()}")
 
@@ -681,10 +700,51 @@ async def scan_loop():
         await asyncio.sleep(30)
 
 
+def reconcile_positions():
+    """On startup, sync the journal with the exchange. A position that vanished while the bot
+    was offline (TP/SL hit) is closed in the journal; an exchange position with no journal row
+    is flagged for manual review. Prevents orphaned or double-opened positions."""
+    if not config.futures_enabled():
+        return
+    from . import exchange_trade
+    try:
+        positions = exchange_trade.list_open_positions()
+    except Exception:
+        print(f"[reconcile] could not read positions:\n{traceback.format_exc()[:400]}")
+        return
+
+    tracked = set()
+    closed_offline = []
+    for row in journal.executed_open_signals():
+        perp = exchange_trade._perp_symbol(row["symbol"])
+        tracked.add(perp)
+        if perp not in positions:
+            # Position is gone — closed by TP/SL while offline. Exact exit unknown → result_r NULL.
+            journal.update_status(row["id"], "closed_offline", None, close=True)
+            closed_offline.append(row["id"])
+
+    orphans = [s for s in positions if s not in tracked]
+
+    if closed_offline or orphans:
+        lines = ["♻️ <b>Reconciliation</b> (qayta ishga tushdi)"]
+        if closed_offline:
+            lines.append(f"✅ Offline yopilgan (jurnal yangilandi): {', '.join('#'+str(i) for i in closed_offline)}")
+        if orphans:
+            lines.append(f"⚠️ Jurnalsiz ochiq pozitsiya (qo'lda tekshiring): {', '.join(orphans)}")
+        telegram.send("\n".join(lines))
+    print(f"[reconcile] tracked={len(tracked)} closed_offline={len(closed_offline)} orphans={len(orphans)}")
+
+
 async def main():
     mode = config.TRADING_MODE if config.trading_enabled() else "off (signals only)"
     screener_mode = "TradingView" if config.USE_TV_SCREENER else "ccxt"
-    print(f"[boot] trading-signal-bot starting · trading={mode} · screener={screener_mode}")
+    net = "TESTNET" if config.BINANCE_TESTNET else "LIVE"
+    print(f"[boot] trading-signal-bot starting · trading={mode} ({net}) · screener={screener_mode}")
+
+    try:
+        reconcile_positions()
+    except Exception:
+        print(f"[boot] reconcile error:\n{traceback.format_exc()[:400]}")
 
     tasks = [scan_loop()]
 

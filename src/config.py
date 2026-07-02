@@ -54,6 +54,18 @@ DAILY_LOSS_STOP_R = float(os.getenv("DAILY_LOSS_STOP_R", "-3"))  # halt trading 
 # Futures is required to trade short signals. Set BINANCE_MARKET=spot to force spot/long-only.
 BINANCE_MARKET = os.getenv("BINANCE_MARKET", "future")
 LEVERAGE = int(os.getenv("LEVERAGE", "3"))  # futures leverage per position (keep low)
+
+# Paper-trade on Binance Futures Testnet (testnet.binancefuture.com) — fake money, real
+# execution path. Use testnet API keys. Keep this TRUE until /stats is consistently positive.
+BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "false").lower() == "true"
+
+# Partial take-profit allocation across TP1/TP2/TP3 (must sum to 1.0). After TP1 fills the
+# stop is moved to breakeven on the exchange, so the trade can no longer become a loss.
+TP_SPLITS = (
+    float(os.getenv("TP1_FRAC", "0.4")),
+    float(os.getenv("TP2_FRAC", "0.4")),
+    float(os.getenv("TP3_FRAC", "0.2")),
+)
 # Futures host: fapi.binance.com. Spot host: api.binance.com.
 # On a Binance-reachable server (Hetzner EU) the defaults work; on a blocked host you'll get 451.
 BINANCE_HOSTNAME = os.getenv("BINANCE_HOSTNAME", "")  # empty => ccxt default for the chosen market
