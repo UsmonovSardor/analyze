@@ -56,8 +56,8 @@ def find_candidate_tv(tv_sym: dict):
     except Exception as _exc:
         msg = str(_exc)
         if "429" in msg:
-            # Rate limited — skip silently, next scan cycle will retry
-            return None
+            # Rate limited — re-raise so the caller can back off / fall back to ccxt.
+            raise
         print(f"[screener_tv] {tv_sym['symbol']} fetch error: {type(_exc).__name__}: {_exc}")
         return None
 
@@ -84,6 +84,24 @@ def find_candidate_tv(tv_sym: dict):
     buy_4h  = ctx.summary.get("BUY", 0)
     sell_4h = ctx.summary.get("SELL", 0)
     rec_4h  = ctx.summary.get("RECOMMENDATION", "")
+
+    # ── Non-crypto (forex/gold/stocks): moderate 1h+4h agreement ──────────
+    # These instruments trend slower and rarely hit the strict crypto counts,
+    # so require both timeframes to agree instead. Gemini still gates quality.
+    if tv_sym.get("screener") != "crypto":
+        # Side must not fight the 4h EMA trend — Gemini hard-rejects counter-trend.
+        if not downtrend_4h and (rec_1h in ("BUY", "STRONG_BUY")
+                and rec_4h in ("BUY", "STRONG_BUY") and buy_1h >= 6 and rsi_1h < 70):
+            return {"setup": "TV", "side": "long"}
+        if config.ALLOW_SHORTS and not uptrend_4h and (rec_1h in ("SELL", "STRONG_SELL")
+                and rec_4h in ("SELL", "STRONG_SELL") and sell_1h >= 6 and rsi_1h > 30):
+            return {"setup": "TV", "side": "short"}
+        # Pullback rally inside a 4h downtrend (oscillators turn buy-ish while the
+        # EMA trend stays down) — classic short entry, mirror for longs.
+        if config.ALLOW_SHORTS and downtrend_4h and rsi_1h > 45 and buy_1h >= 5:
+            return {"setup": "A", "side": "short"}
+        if uptrend_4h and rsi_1h < 55 and sell_1h >= 5:
+            return {"setup": "A", "side": "long"}
 
     # ── LONG candidates (uptrend) ──────────────────────────────────────────
     # Setup A: pullback to EMA50 in uptrend

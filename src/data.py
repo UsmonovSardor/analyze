@@ -5,7 +5,7 @@ import ccxt
 import pandas as pd
 
 # Binance blocks US IPs (HTTP 451) — set EXCHANGE=okx/bybit/kraken if the host region is restricted
-_exchange = getattr(ccxt, os.getenv("EXCHANGE", "binance"))({"enableRateLimit": True})
+_exchange = getattr(ccxt, os.getenv("EXCHANGE", "binance"))({"enableRateLimit": True, "timeout": 30000})
 if _exchange.id == "binance":
     # data-api.binance.vision serves public market data without geo-restrictions;
     # load spot markets only so ccxt never touches the geo-blocked fapi/dapi endpoints

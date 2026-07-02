@@ -20,6 +20,19 @@ if config.WEBHOOK_ENABLED:
 
 _webhook_queue: asyncio.Queue = asyncio.Queue()
 
+# Rejected symbols aren't re-analyzed for a while — otherwise the same doomed
+# candidates burn the daily Gemini budget every 30-minute scan.
+_reject_cooldown: dict = {}
+REJECT_COOLDOWN_SEC = 2 * 3600
+
+
+def _recently_rejected(symbol: str) -> bool:
+    return time.time() - _reject_cooldown.get(symbol, 0.0) < REJECT_COOLDOWN_SEC
+
+
+def _mark_rejected(symbol: str):
+    _reject_cooldown[symbol] = time.time()
+
 
 def send_chart(symbol: str, snap: dict, sig: dict | None = None, chat_id=None):
     """Render and post an annotated chart; never let a chart error block a signal."""
@@ -73,6 +86,36 @@ def _last(df, col):
     return float(df[col].iloc[-1])
 
 
+def trend_4h(snap: dict) -> str:
+    """Classify the 4h trend from ccxt data — the SAME data Gemini analyzes.
+    Returns 'up' | 'down' | 'mixed'."""
+    ctx = snap["context_tf"]
+    close, e50, e200 = _last(ctx, "close"), _last(ctx, "ema50"), _last(ctx, "ema200")
+    if close > e200 and e50 > e200:
+        return "up"
+    if close < e200 and e50 < e200:
+        return "down"
+    return "mixed"
+
+
+def align_hint(hint: dict, snap: dict) -> dict:
+    """The TV screener's side can contradict the ccxt 4h trend that Gemini sees,
+    and Gemini hard-rejects counter-trend trades — so those candidates always died.
+    A long hint in a downtrend is usually a textbook short (pullback into
+    resistance), and vice versa; flip the side so the candidate is with-trend."""
+    if not isinstance(hint, dict):
+        return hint
+    trend = trend_4h(snap)
+    side = hint.get("side", "long")
+    if trend == "down" and side == "long" and config.ALLOW_SHORTS:
+        print(f"[align] {snap['symbol']}: 4h trend down — long hint flipped to SHORT")
+        return {**hint, "side": "short"}
+    if trend == "up" and side == "short":
+        print(f"[align] {snap['symbol']}: 4h trend up — short hint flipped to LONG")
+        return {**hint, "side": "long"}
+    return hint
+
+
 def market_context(btc_snap) -> str:
     """One-line human-readable market regime for the report header."""
     ctx = btc_snap["context_tf"]
@@ -93,6 +136,8 @@ async def _process_candidate(symbol: str, snap: dict, hint: str,
         return False
     if journal.recent_signal_for(symbol, config.COOLDOWN_HOURS_PER_SYMBOL):
         return False
+    if _recently_rejected(symbol):
+        return False
     if journal.claude_calls_today() >= config.MAX_CLAUDE_CALLS_PER_DAY:
         print("[scan] Claude daily call budget exhausted")
         return False
@@ -104,6 +149,7 @@ async def _process_candidate(symbol: str, snap: dict, hint: str,
     ok, why = risk.validate(sig, last_price(symbol))
     if not ok:
         print(f"[risk] {symbol} rejected: {why}")
+        _mark_rejected(symbol)
         return False
 
     sig_id = journal.add_signal(sig)
@@ -148,6 +194,8 @@ async def _process_tv_noncrpyto(tv_sym: dict, hint, perf: dict, ctx_label: str) 
         return False
     if journal.recent_signal_for(symbol, config.COOLDOWN_HOURS_PER_SYMBOL):
         return False
+    if _recently_rejected(symbol):
+        return False
 
     e1h = await _tv_analysis_async(symbol, tv_sym["exchange"], tv_sym["screener"], "1h")
     e4h = await _tv_analysis_async(symbol, tv_sym["exchange"], tv_sym["screener"], "4h")
@@ -164,6 +212,7 @@ async def _process_tv_noncrpyto(tv_sym: dict, hint, perf: dict, ctx_label: str) 
     ok, why = risk.validate(sig, current_price)
     if not ok:
         print(f"[risk] {symbol} rejected: {why}")
+        _mark_rejected(symbol)
         return False
 
     sig_id = journal.add_signal(sig)
@@ -205,12 +254,13 @@ async def scan_once(notify_chat_id=None):
         signals_found = 0
         skipped_429   = 0
 
-        async def _tv_with_backoff(coro, symbol: str) -> tuple:
-            """Run coro with up to 3 retries on 429, exponential backoff (10s, 30s, 60s)."""
-            delays = [10, 30, 60]
+        async def _tv_with_backoff(coro_factory, symbol: str) -> tuple:
+            """Run coro_factory() with up to 2 retries on 429 (a coroutine can only be
+            awaited once, so a factory is required — awaiting the same coro twice raises)."""
+            delays = [15, 45]
             for attempt, delay in enumerate(delays + [None]):
                 try:
-                    return True, await coro
+                    return True, await coro_factory()
                 except Exception as exc:
                     if "429" not in str(exc) or attempt == len(delays):
                         return False, exc
@@ -220,39 +270,44 @@ async def scan_once(notify_chat_id=None):
 
         for tv_sym in config.TV_SYMBOLS:
             ccxt_symbol = tv_symbol_to_ccxt(tv_sym)
-            if ccxt_symbol:
-                ok, result = await _tv_with_backoff(_find_candidate_tv_async(tv_sym), tv_sym["symbol"])
-                if not ok:
-                    exc = result
-                    if exc and "429" in str(exc):
-                        skipped_429 += 1
-                    elif exc:
-                        print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
-                    continue
+            ok, result = await _tv_with_backoff(
+                lambda: _find_candidate_tv_async(tv_sym), tv_sym["symbol"])
+            rate_limited = False
+            if ok:
                 hint = result
-                if not hint:
+            else:
+                exc = result
+                if exc and "429" in str(exc):
+                    skipped_429 += 1
+                    rate_limited = True
+                    hint = None
+                else:
+                    print(f"[scan-tv] error on {tv_sym['symbol']}: {exc}")
                     continue
-                # When BTC 4h is bearish, block crypto LONGS but still allow SHORTS.
-                if not btc_ok and hint.get("side") == "long":
+
+            if ccxt_symbol:
+                if not hint and not rate_limited:
                     continue
                 try:
                     snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
                         ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+                    if hint is None:
+                        # TV rate-limited — ccxt screener keeps the scan alive.
+                        hint = screener.find_candidate(snap)
+                        if hint:
+                            print(f"[scan-tv] {tv_sym['symbol']}: TV 429 — ccxt fallback hint {hint}")
+                    if not hint:
+                        continue
+                    hint = align_hint(hint, snap)
+                    # When BTC 4h is bearish, block crypto LONGS but still allow SHORTS.
+                    if not btc_ok and hint.get("side") == "long":
+                        continue
                     sent = await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)
                     if sent:
                         signals_found += 1
                 except Exception:
                     print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
             else:
-                ok, result = await _tv_with_backoff(_find_candidate_tv_async(tv_sym), tv_sym["symbol"])
-                if not ok:
-                    exc = result
-                    if exc and "429" in str(exc):
-                        skipped_429 += 1
-                    elif exc:
-                        print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
-                    continue
-                hint = result
                 if not hint:
                     continue
                 try:
@@ -261,6 +316,8 @@ async def scan_once(notify_chat_id=None):
                         signals_found += 1
                 except Exception:
                     print(f"[scan-tv] error on {tv_sym['symbol']}:\n{traceback.format_exc()}")
+
+        print(f"[scan] done: {signals_found} signal(s), {skipped_429} symbol(s) TV rate-limited")
 
         summary = f"✅ <b>Skanerlash tugadi</b>\n"
         if signals_found:
@@ -283,6 +340,7 @@ async def scan_once(notify_chat_id=None):
             hint = screener.find_candidate(snap)
             if not hint:
                 continue
+            hint = align_hint(hint, snap)
             # When BTC is bearish, block longs but allow shorts.
             if not btc_ok and hint.get("side") == "long":
                 continue
@@ -418,7 +476,10 @@ async def analyze_on_demand(symbol_raw: str, chat_id=None) -> str:
         cur_price = float(e1h.indicators.get("close", 0))
         if not cur_price:
             return f"❌ <b>{symbol}</b> narx ma'lumoti topilmadi."
-        hint = await asyncio.to_thread(find_candidate_tv, target) or {"setup": "TV", "side": "long"}
+        try:
+            hint = await asyncio.to_thread(find_candidate_tv, target) or {"setup": "TV", "side": "long"}
+        except Exception:
+            hint = {"setup": "TV", "side": "long"}
         journal.bump_claude_calls()
         sig = await analyze_tv_direct(symbol, e1h, e4h, hint, journal.setup_performance(30))
         sig["symbol"] = symbol
@@ -444,6 +505,7 @@ async def analyze_on_demand(symbol_raw: str, chat_id=None) -> str:
         return f"❌ <b>{symbol}</b> ma'lumotini olishda xato: {str(exc)[:120]}"
 
     hint = screener.find_candidate(snap) or {"setup": "A", "side": "long"}
+    hint = align_hint(hint, snap)
     journal.bump_claude_calls()
     sig = await analyze(snap, hint, btc_snap, journal.setup_performance(30))
     ctx_str = market_context(btc_snap)
@@ -617,6 +679,7 @@ async def webhook_processor():
                 btc_snap = snapshot("BTC/USDT", config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
                 snap = btc_snap if ccxt_symbol == "BTC/USDT" else snapshot(
                     ccxt_symbol, config.ENTRY_TF, config.CONTEXT_TF, config.CANDLES)
+                hint    = align_hint(hint, snap)
                 perf    = journal.setup_performance(30)
                 ctx_str = market_context(btc_snap)
                 await _process_candidate(ccxt_symbol, snap, hint, btc_snap, perf, ctx_str)

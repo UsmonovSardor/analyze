@@ -28,7 +28,7 @@ def _skill() -> str:
     return _SKILL
 
 
-_GEMINI_MODELS_DEFAULT = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]
+_GEMINI_MODELS_DEFAULT = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash"]
 
 
 def _gemini_client():
@@ -56,16 +56,21 @@ def _gemini_generate(prompt: str, model_name: str | None = None) -> str:
                     contents=prompt,
                     config=types.GenerateContentConfig(system_instruction=_skill()),
                 )
-                return resp.text
+                if resp.text:
+                    return resp.text
+                raise RuntimeError(f"empty response from {m}")
             except Exception as exc:
+                last_exc = exc
                 msg = str(exc)
                 if "503" in msg or "UNAVAILABLE" in msg:
                     wait = 5 * (attempt + 1)
                     print(f"[gemini] {m} 503 — waiting {wait}s (attempt {attempt+1})")
                     _time.sleep(wait)
-                    last_exc = exc
                     continue
-                raise
+                # 404 (retired model), 400, quota etc. — don't kill the whole call,
+                # fall through to the next model in the chain.
+                print(f"[gemini] {m} failed: {msg[:150]} — trying next model")
+                break
     raise last_exc
 
 
@@ -151,7 +156,14 @@ SYMBOL: {symbol}
 
 This may be forex, commodity, or stock — apply universal price-action principles.
 Both LONG and SHORT signals are allowed (trade with the 4H trend).
-Follow the skill process exactly. Output ONLY the JSON object."""
+
+DATA LIMITATION: you only have a CURRENT indicator snapshot, not candle history.
+Skip the candle-pattern and volume-history steps (they cannot be verified here) —
+judge on what IS verifiable: EMA stack/trend, momentum (RSI, Stoch, MACD), location
+(Bollinger, distance to EMAs in ATR units) and the TV recommendation counts.
+Do NOT reject just because candle patterns can't be checked; base every confirmation
+on the numbers provided. Anchor entry/SL/TP to EMA levels, BB bands and ATR multiples.
+Follow the rest of the skill process exactly. Output ONLY the JSON object."""
 
     import traceback as _tb
     try:

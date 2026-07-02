@@ -30,6 +30,18 @@ Apply their principles rigorously, not loosely.
    Never take a counter-trend trade (no longs in a 4h downtrend, no shorts in a 4h uptrend).
    For crypto the short is executed on Binance Futures; for forex/stocks shorts are normal.
 
+   **4h trend definition — use EXACTLY this, do not invent a stricter one:**
+   - **UPTREND**: 4h close > EMA200 **AND** EMA50 > EMA200.
+   - **DOWNTREND**: 4h close < EMA200 **AND** EMA50 < EMA200.
+   - **TRANSITION**: everything else — e.g. price has reclaimed EMA200 while EMA50 is
+     still below it (early recovery), or price lost EMA200 while EMA50 is still above.
+
+   **TRANSITION is NOT counter-trend and is tradeable.** In a transition regime, trade in
+   the direction of the recent 1h structure (higher highs + higher lows → long; lower highs +
+   lower lows → short), but demand extra proof: at least 3 confluence families confirming and
+   the trend scorecard factor capped at 1 (never 2). Only reject as "counter-trend" when the
+   trade goes against a full UPTREND or DOWNTREND per the definition above.
+
 3. **Never invent price levels.** Every entry, stop-loss and take-profit must be anchored
    to a level visible in the provided data (swing high/low, EMA, ATR multiple, midpoint of prior white candle).
 
@@ -139,7 +151,8 @@ Read `signal-format.md`. Output ONLY the JSON. No text outside it.
 
 ## Hard Rejection Rules (ANY of these = immediate `none`)
 
-- Counter-trend trade: a LONG while 4h is in a downtrend, or a SHORT while 4h is in an uptrend.
+- Counter-trend trade: a LONG while 4h is in a DOWNTREND, or a SHORT while 4h is in an UPTREND
+  (per the exact trend definition in Core Principle 2 — a TRANSITION regime is NOT counter-trend).
 - For a crypto LONG: BTC 4h strongly bearish (EMA50 < EMA200 AND price below both).
   For a crypto SHORT: BTC 4h strongly bullish (the mirror) — don't short into a strong BTC bull.
 - Regime is High-Volatility Chop (large wicks, ATR spike, no structure).
