@@ -124,7 +124,7 @@ def main_keyboard() -> dict:
     """Persistent tap-to-send command buttons shown above the input field."""
     return {
         "keyboard": [
-            ["🪙 /coins", "🔄 /refresh"],
+            ["🪙 /coins"],
             ["📈 /stats", "📂 /open"],
         ],
         "resize_keyboard": True,
@@ -373,7 +373,6 @@ def format_help() -> str:
         "🔘 <b>Buyruqlar:</b>\n"
         "🪙 <code>/coins</code> — instrument tanlang → AI tahlil + grafik\n"
         "🔍 <code>/analyze BTC</code> yoki <code>/analyze EURUSD</code> — istalganini tahlil\n"
-        "🔄 <code>/refresh</code> — bozorni hozir skanerlash\n"
         "📈 <code>/stats</code> — haftalik statistika\n"
         "📂 <code>/open</code> — ochiq signallar\n"
         "Pastdagi tugmalardan foydalaning 👇\n"
