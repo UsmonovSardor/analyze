@@ -403,6 +403,58 @@ async def analyze_on_demand(symbol_raw: str, chat_id=None, tf: str = "1h") -> st
             f"Ishonch: {sig.get('score', 0)}/10")
 
 
+def _skills_menu_text() -> str:
+    from . import skills_store
+    n_st, n_cu = len(skills_store.strategies()), len(skills_store.list_custom())
+    return (f"📚 <b>Bilimlar bazasi</b>\n"
+            f"🎯 {n_st} ta strategiya · ✍️ {n_cu} ta sizniki\n"
+            f"Bo'limni tanlang:")
+
+
+def _send_skills_menu(chat_id=None):
+    from . import skills_store
+    telegram.send(_skills_menu_text(),
+                  reply_markup=telegram.skills_menu_keyboard(
+                      len(skills_store.strategies()), len(skills_store.list_custom())),
+                  chat_id=chat_id)
+
+
+ADDSKILL_HELP = (
+    "➕ <b>Yangi strategiya qo'shish</b>\n\n"
+    "Bitta xabarda quyidagicha yuboring:\n\n"
+    "<code>/addskill Strategiya nomi\n"
+    "Qoidalar: qachon kirish, qachon kirmaslik,\n"
+    "stop-loss qayerda, take-profit qayerda,\n"
+    "qaysi timeframe va bozorlar uchun.</code>\n\n"
+    "Birinchi qator — nom, qolgani — qoidalar (kamida 30 belgi).\n"
+    "Strategiya darhol AI tahliliga qo'shiladi va signallarda "
+    "<b>strategy_name</b> sifatida chiqishi mumkin.\n"
+    "O'chirish: 📚 Skillar → ✍️ Mening strategiyalarim → 🗑"
+)
+
+
+async def _handle_addskill(text: str, chat_id=None):
+    from . import skills_store
+    from .analyzer import reload_skill
+    # strip everything up to and including the /addskill token
+    idx = text.lower().find("/addskill")
+    payload = text[idx + len("/addskill"):].strip()
+    lines = [l for l in payload.splitlines()]
+    name = (lines[0].strip() if lines else "")[:60]
+    body = "\n".join(lines[1:]).strip()
+    if not name or len(body) < 30:
+        telegram.send(ADDSKILL_HELP, chat_id=chat_id)
+        return
+    replaced = skills_store.add_custom(name, body)
+    reload_skill()
+    verb = "yangilandi ♻️" if replaced else "qo'shildi ✅"
+    telegram.send(
+        f"✅ <b>{telegram._esc(name)}</b> strategiyasi {verb}\n"
+        f"AI endi tahlillarda undan foydalanadi.\n"
+        f"Jami sizning strategiyalaringiz: {len(skills_store.list_custom())} ta",
+        chat_id=chat_id)
+
+
 async def handle_command(text: str, chat_id=None):
     # tolerate emoji/text before the command (reply-keyboard buttons send "📊 /analyze BTC")
     tokens = text.strip().split()
@@ -412,6 +464,12 @@ async def handle_command(text: str, chat_id=None):
     cmd = tokens[idx].lower().lstrip("/").split("@")[0]
     arg = tokens[idx + 1] if len(tokens) > idx + 1 else None
 
+    if cmd == "addskill":
+        await _handle_addskill(text, chat_id=chat_id)
+        return
+    if cmd in ("skills", "skillar", "strategiyalar", "s"):
+        _send_skills_menu(chat_id=chat_id)
+        return
     if cmd in ("refresh", "yangilash", "r"):
         asyncio.create_task(scan_once(notify_chat_id=chat_id))
     elif cmd in ("coins", "valyutalar", "c"):
@@ -488,6 +546,67 @@ async def handle_command(text: str, chat_id=None):
         telegram.send(telegram.format_help(), reply_markup=telegram.main_keyboard(), chat_id=chat_id)
 
 
+def _handle_skills_callback(sid: str, chat_id):
+    """sk:* inline-button router: menu, docs (paged), strategy list, custom CRUD."""
+    from . import skills_store
+    from .analyzer import reload_skill
+    part = sid.split("|")
+    what = part[0]
+
+    if what == "menu":
+        _send_skills_menu(chat_id=chat_id)
+
+    elif what == "list":
+        page = int(part[1]) if len(part) > 1 else 0
+        names = [n for n, _ in skills_store.strategies()]
+        telegram.send(f"🎯 <b>Strategiyalar</b> ({len(names)} ta) — o'qish uchun bosing:",
+                      reply_markup=telegram.strategies_list_keyboard(names, page),
+                      chat_id=chat_id)
+
+    elif what == "st":
+        idx = int(part[1])
+        items = skills_store.strategies()
+        if 0 <= idx < len(items):
+            name, body = items[idx]
+            if len(body) > skills_store.PAGE_CHARS:
+                body = body[:skills_store.PAGE_CHARS] + "\n… (qisqartirildi)"
+            telegram.send(f"🎯 <b>{telegram._esc(name)}</b>\n\n<pre>{telegram._esc(body)}</pre>",
+                          reply_markup={"inline_keyboard": [[
+                              {"text": "🔙 Strategiyalar", "callback_data": f"sk:list|{idx // 10}"}]]},
+                          chat_id=chat_id)
+
+    elif what == "doc":
+        di, page = int(part[1]), int(part[2]) if len(part) > 2 else 0
+        label, pages = skills_store.doc_pages(di)
+        page = max(0, min(page, len(pages) - 1))
+        telegram.send(f"{label}\n\n<pre>{telegram._esc(pages[page])}</pre>",
+                      reply_markup=telegram.doc_nav_keyboard(di, page, len(pages)),
+                      chat_id=chat_id)
+
+    elif what == "cust":
+        items = skills_store.list_custom()
+        if not items:
+            telegram.send("✍️ Hozircha o'z strategiyangiz yo'q.\n" + ADDSKILL_HELP,
+                          chat_id=chat_id)
+        else:
+            lines = [f"{i+1}. <b>{telegram._esc(n)}</b> — {telegram._esc(b[:80])}…"
+                     for i, (n, b) in enumerate(items)]
+            telegram.send("✍️ <b>Mening strategiyalarim</b>\n\n" + "\n".join(lines) +
+                          "\n\nO'chirish uchun 🗑 tugmasini bosing:",
+                          reply_markup=telegram.custom_list_keyboard([n for n, _ in items]),
+                          chat_id=chat_id)
+
+    elif what == "cdel":
+        name = skills_store.remove_custom(int(part[1]))
+        reload_skill()
+        if name:
+            telegram.send(f"🗑 <b>{telegram._esc(name)}</b> o'chirildi.", chat_id=chat_id)
+        _send_skills_menu(chat_id=chat_id)
+
+    elif what == "add":
+        telegram.send(ADDSKILL_HELP, chat_id=chat_id)
+
+
 async def telegram_poller():
     """Long-poll for button presses and text commands."""
     offset = 0
@@ -518,6 +637,12 @@ async def telegram_poller():
                             f"👁️ Signal #{sid} kuzatish rejimiga olindi.\n"
                             f"Order ochilmadi — lekin TP1/TP2/TP3/SL natijalari yuborilaveradi."
                         )
+                    elif action == "sk":
+                        cb_chat = cb.get("message", {}).get("chat", {}).get("id")
+                        try:
+                            _handle_skills_callback(sid, cb_chat)
+                        except Exception:
+                            print(f"[skills-cb] error {sid}:\n{traceback.format_exc()}")
                     elif action in ("coin", "tv"):
                         symbol = sid
                         cb_chat = cb.get("message", {}).get("chat", {}).get("id")

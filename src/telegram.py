@@ -124,12 +124,58 @@ def main_keyboard() -> dict:
     """Persistent tap-to-send command buttons shown above the input field."""
     return {
         "keyboard": [
-            ["🪙 /coins"],
+            ["🪙 /coins", "📚 /skills"],
             ["📈 /stats", "📂 /open"],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
     }
+
+
+def skills_menu_keyboard(n_strategies: int, n_custom: int) -> dict:
+    """Top-level skills/strategies browser menu."""
+    from .skills_store import DOCS
+    rows = [[{"text": f"🎯 Strategiyalar ({n_strategies} ta)", "callback_data": "sk:list|0"}]]
+    for i, (_name, label) in enumerate(DOCS):
+        rows.append([{"text": label, "callback_data": f"sk:doc|{i}|0"}])
+    rows.append([{"text": f"✍️ Mening strategiyalarim ({n_custom})", "callback_data": "sk:cust"}])
+    rows.append([{"text": "➕ Yangi strategiya qo'shish", "callback_data": "sk:add"}])
+    return {"inline_keyboard": rows}
+
+
+def strategies_list_keyboard(names: list, page: int, per: int = 10) -> dict:
+    """Paged list of strategy buttons + nav row."""
+    total = (len(names) + per - 1) // per
+    page = max(0, min(page, total - 1))
+    rows = [[{"text": n[:40], "callback_data": f"sk:st|{page * per + i}"}]
+            for i, n in enumerate(names[page * per:(page + 1) * per])]
+    nav = []
+    if page > 0:
+        nav.append({"text": "⬅️", "callback_data": f"sk:list|{page - 1}"})
+    nav.append({"text": f"{page + 1}/{total}", "callback_data": "noop"})
+    if page < total - 1:
+        nav.append({"text": "➡️", "callback_data": f"sk:list|{page + 1}"})
+    rows.append(nav)
+    rows.append([{"text": "🔙 Menyu", "callback_data": "sk:menu"}])
+    return {"inline_keyboard": rows}
+
+
+def doc_nav_keyboard(doc_idx: int, page: int, total: int) -> dict:
+    nav = []
+    if page > 0:
+        nav.append({"text": "⬅️", "callback_data": f"sk:doc|{doc_idx}|{page - 1}"})
+    nav.append({"text": f"{page + 1}/{total}", "callback_data": "noop"})
+    if page < total - 1:
+        nav.append({"text": "➡️", "callback_data": f"sk:doc|{doc_idx}|{page + 1}"})
+    return {"inline_keyboard": [nav, [{"text": "🔙 Menyu", "callback_data": "sk:menu"}]]}
+
+
+def custom_list_keyboard(names: list) -> dict:
+    rows = [[{"text": f"🗑 {n[:35]}", "callback_data": f"sk:cdel|{i}"}]
+            for i, n in enumerate(names)]
+    rows.append([{"text": "➕ Qo'shish", "callback_data": "sk:add"},
+                 {"text": "🔙 Menyu", "callback_data": "sk:menu"}])
+    return {"inline_keyboard": rows}
 
 
 def tf_keyboard(symbol: str) -> dict:
@@ -373,6 +419,8 @@ def format_help() -> str:
         "🔘 <b>Buyruqlar:</b>\n"
         "🪙 <code>/coins</code> — instrument tanlang → AI tahlil + grafik\n"
         "🔍 <code>/analyze BTC</code> yoki <code>/analyze EURUSD</code> — istalganini tahlil\n"
+        "📚 <code>/skills</code> — barcha strategiyalar va qoidalar\n"
+        "➕ <code>/addskill Nom + qoidalar</code> — o'z strategiyangizni qo'shish\n"
         "📈 <code>/stats</code> — haftalik statistika\n"
         "📂 <code>/open</code> — ochiq signallar\n"
         "Pastdagi tugmalardan foydalaning 👇\n"

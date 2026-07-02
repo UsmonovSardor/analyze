@@ -15,6 +15,10 @@ def _load_skill() -> str:
     for name in ["SKILL.md", "strategy.md", "candlestick-patterns.md", "price-action.md", "risk-rules.md", "signal-format.md"]:
         with open(os.path.join(config.SKILL_DIR, name)) as f:
             parts.append(f"<<< {name} >>>\n{f.read()}")
+    from .skills_store import prompt_block
+    custom = prompt_block()
+    if custom:
+        parts.append(custom)
     return "\n\n".join(parts)
 
 
@@ -26,6 +30,12 @@ def _skill() -> str:
     if _SKILL is None:
         _SKILL = _load_skill()
     return _SKILL
+
+
+def reload_skill():
+    """Re-read skill files + custom strategies (call after /addskill)."""
+    global _SKILL
+    _SKILL = None
 
 
 _GEMINI_MODELS_DEFAULT = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash"]
