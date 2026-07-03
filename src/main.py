@@ -536,11 +536,11 @@ async def handle_command(text: str, chat_id=None):
                 telegram.send(f"✅ Signal yaratildi #{sig_id}", chat_id=chat_id)
             else:
                 telegram.send(
-                    f"📊 <b>TEST {sym}</b> — Gemini {signal_type.upper()} dedi lekin risk gate o'tmadi\n"
+                    f"📊 <b>TEST {sym}</b> — Grok {signal_type.upper()} dedi lekin risk gate o'tmadi\n"
                     f"Sabab: {why}\nScore: {score}/10\n💡 {reason}", chat_id=chat_id)
         else:
             telegram.send(
-                f"📊 <b>TEST {sym}</b> — Gemini signal bermadi\n"
+                f"📊 <b>TEST {sym}</b> — Grok signal bermadi\n"
                 f"Signal: {signal_type} | Score: {score}/10\n💡 {reason}", chat_id=chat_id)
     elif cmd in ("help", "start", "yordam", "menu"):
         telegram.send(telegram.format_help(), reply_markup=telegram.main_keyboard(), chat_id=chat_id)

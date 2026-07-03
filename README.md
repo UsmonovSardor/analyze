@@ -1,14 +1,15 @@
 # Trading Signal Bot (shaxsiy)
 
 Ko'p bozorli (crypto · forex · oltin · aksiya) swing-trading signal tizimi:
-24/7 screener → **Gemini AI** tahlil → risk filtri → Telegram. Har ikki yo'nalish
+24/7 screener → **Grok AI** tahlil → risk filtri → Telegram. Har ikki yo'nalish
 (🟢 LONG va 🔻 SHORT). Ixtiyoriy: Binance Futures'da avto/qo'lda savdo.
 
 ## Arxitektura
 
 1. **Screener** (`src/screener_tv.py` + `src/screener.py`) — har 15 daqiqada 40+ instrumentni
    tekshiradi (TradingView ma'lumotlari), AI'siz. Long va short nomzodlarni topadi.
-2. **Gemini tahlil** (`src/analyzer.py`) — faqat nomzod setup topilganda chaqiriladi.
+2. **Grok AI tahlil** (`src/analyzer.py` + `src/ai_client.py`) — faqat nomzod setup topilganda chaqiriladi.
+   `AI_PROVIDER=grok` (standart) yoki `gemini`. Grok ishlamasa Gemini'ga avtomatik o'tadi (kalit bo'lsa).
    Strategiya bilimlari `skill/` papkasida — o'zgartirsangiz bot darhol yangi qoidalar bilan ishlaydi.
 3. **Risk engine** (`src/risk.py`) — model taklifini deterministik tekshiradi (R:R, score, narx, long/short tartibi).
 4. **Telegram** — signal + grafik, TP/SL urilganda yangilanish + natija grafigi, haftalik statistika.
@@ -48,7 +49,9 @@ docker compose up -d --build
 ### Muhim env o'zgaruvchilar
 | O'zgaruvchi | Tavsif |
 |---|---|
-| `GEMINI_API_KEY` | **Majburiy** — AI tahlil (Google AI Studio, bepul tier) |
+| `AI_PROVIDER` | `grok` (standart) yoki `gemini` |
+| `XAI_API_KEY` | **Majburiy** (grok uchun) — xAI Grok kaliti (console.x.ai) |
+| `GEMINI_API_KEY` | Ixtiyoriy zaxira — AI tahlil (Google AI Studio, bepul tier) |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Telegram yetkazib berish |
 | `BINANCE_API_KEY`, `BINANCE_API_SECRET` | Ixtiyoriy — savdo (Futures ruxsati, **Withdrawal o'chirilgan**) |
 | `BINANCE_MARKET` | `future` (long+short, standart) yoki `spot` (faqat long) |
