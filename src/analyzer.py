@@ -1,12 +1,10 @@
-"""Gemini analysis layer — uses google-generativeai (free tier)."""
+"""AI analysis layer — Grok (xAI) primary, Gemini fallback via ai_client."""
 import asyncio
 import json
 import os
 
-from google import genai
-from google.genai import types
-
 from . import config
+from .ai_client import ai_generate
 from .data import df_for_prompt
 
 
@@ -38,55 +36,9 @@ def reload_skill():
     _SKILL = None
 
 
-_GEMINI_MODELS_DEFAULT = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash"]
-
-
-def _gemini_client():
-    return genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
-
-
-_MODEL_COOLDOWN: dict = {}   # model -> unix ts until which we skip it (quota exhausted)
-
-
-def _gemini_generate(prompt: str, model_name: str | None = None) -> str:
-    """Call Gemini with automatic model fallback on 503."""
-    import time as _time
-    client = _gemini_client()
-    # Strongest model first (GEMINI_MODEL_FINAL, default 2.5-pro) — quota/503
-    # automatically falls through to the flash chain, so signals never stop.
-    if model_name:
-        models = [model_name]
-    else:
-        chain = [config.GEMINI_MODEL_FINAL, config.GEMINI_MODEL] + _GEMINI_MODELS_DEFAULT
-        models = list(dict.fromkeys(m for m in chain if m))
-        models = [m for m in models if _MODEL_COOLDOWN.get(m, 0) < _time.time()] or models
-    last_exc = None
-    for m in models:
-        for attempt in range(2):
-            try:
-                resp = client.models.generate_content(
-                    model=m,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(system_instruction=_skill()),
-                )
-                if resp.text:
-                    return resp.text
-                raise RuntimeError(f"empty response from {m}")
-            except Exception as exc:
-                last_exc = exc
-                msg = str(exc)
-                if "503" in msg or "UNAVAILABLE" in msg:
-                    wait = 5 * (attempt + 1)
-                    print(f"[gemini] {m} 503 — waiting {wait}s (attempt {attempt+1})")
-                    _time.sleep(wait)
-                    continue
-                # 404 (retired model), 400, quota etc. — don't kill the whole call,
-                # fall through to the next model in the chain.
-                if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                    _MODEL_COOLDOWN[m] = _time.time() + 600  # skip for 10 min
-                print(f"[gemini] {m} failed: {msg[:150]} — trying next model")
-                break
-    raise last_exc
+def _generate(prompt: str) -> str:
+    """Run the configured AI provider with the skill as system instruction."""
+    return ai_generate(prompt, system=_skill())
 
 
 def _performance_note(perf: dict) -> str:
@@ -186,14 +138,14 @@ Follow the rest of the skill process exactly. Output ONLY the JSON object."""
 
     import traceback as _tb
     try:
-        text = await asyncio.to_thread(_gemini_generate, prompt)
+        text = await asyncio.to_thread(_generate, prompt)
         result = _parse_json(text, symbol)
         if result.get("signal") != "none":
             print(f"[analyzer] {symbol} → signal={result.get('signal')} score={result.get('score')}")
         return result
     except Exception:
         print(f"[analyzer] {symbol} error:\n{_tb.format_exc()[:800]}")
-        return {"signal": "none", "symbol": symbol, "reason": "Gemini API error", "score": 0}
+        return {"signal": "none", "symbol": symbol, "reason": "AI API error", "score": 0}
 
 
 async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> dict:
@@ -201,7 +153,7 @@ async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> 
     symbol = snap["symbol"]
     for short in (False, True):
         try:
-            text = await asyncio.to_thread(_gemini_generate, build_prompt(snap, setup_hint, btc_snap, perf, short=short))
+            text = await asyncio.to_thread(_generate, build_prompt(snap, setup_hint, btc_snap, perf, short=short))
             result = _parse_json(text, symbol)
             if result.get("signal") != "none":
                 print(f"[analyzer] {symbol} → signal={result.get('signal')} score={result.get('score')}")
@@ -212,5 +164,5 @@ async def analyze(snap, setup_hint: str, btc_snap, perf: dict | None = None) -> 
             if not short:
                 continue
             print(f"[analyzer] {symbol} error:\n{_tb.format_exc()[:800]}")
-            return {"signal": "none", "symbol": symbol, "reason": "Gemini error", "score": 0}
-    return {"signal": "none", "symbol": symbol, "reason": "Gemini error after retry", "score": 0}
+            return {"signal": "none", "symbol": symbol, "reason": "AI error", "score": 0}
+    return {"signal": "none", "symbol": symbol, "reason": "AI error after retry", "score": 0}

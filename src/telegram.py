@@ -411,7 +411,7 @@ def format_help() -> str:
         "📊 AI-asosli ko'p bozorli signal tizimi (crypto · forex · oltin · aksiya)\n\n"
         "📌 <b>Imkoniyatlar:</b>\n"
         "• 24/7 avtomatik skanerlash (40+ instrument)\n"
-        "• Gemini AI bilan chuqur tahlil + grafik\n"
+        "• Grok AI bilan chuqur tahlil + grafik\n"
         "• 🟢 LONG va 🔻 SHORT — har ikki yo'nalish\n"
         "• Entry / TP1-3 / Stop-loss aniq belgilangan\n"
         "• Avto va qo'lda savdo (Binance Futures)\n"

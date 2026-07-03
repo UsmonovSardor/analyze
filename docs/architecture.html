@@ -1,0 +1,1735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLACK LION AI — System Architecture</title>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --bg2: #0f1117;
+    --bg3: #161b22;
+    --border: #21262d;
+    --gold: #f0b429;
+    --gold2: #ffd700;
+    --blue: #1f6feb;
+    --blue2: #388bfd;
+    --green: #2ea043;
+    --green2: #3fb950;
+    --red: #da3633;
+    --purple: #8957e5;
+    --purple2: #a371f7;
+    --cyan: #0d9488;
+    --cyan2: #2dd4bf;
+    --orange: #e3621b;
+    --orange2: #fb923c;
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --text3: #6e7681;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* HEADER */
+  .header {
+    background: linear-gradient(135deg, #0a0c10 0%, #0f1117 50%, #1a1100 100%);
+    border-bottom: 2px solid var(--gold);
+    padding: 28px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(20px);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .logo-icon {
+    width: 52px;
+    height: 52px;
+    background: linear-gradient(135deg, var(--gold), var(--orange));
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    box-shadow: 0 0 20px rgba(240,180,41,0.4);
+  }
+
+  .logo-text h1 {
+    font-size: 24px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--gold), var(--gold2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: 2px;
+  }
+
+  .logo-text p {
+    font-size: 12px;
+    color: var(--text2);
+    margin-top: 2px;
+    letter-spacing: 1px;
+  }
+
+  .header-stats {
+    display: flex;
+    gap: 24px;
+  }
+
+  .stat {
+    text-align: center;
+    padding: 8px 16px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .stat-num {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--gold);
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* MAIN */
+  .main { padding: 32px 40px; }
+
+  /* SECTION TITLES */
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    margin-top: 36px;
+  }
+
+  .section-title h2 {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text2);
+  }
+
+  .section-title::before {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* FLOW DIAGRAM */
+  .flow-container {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .flow-container::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--gold), var(--orange), var(--red), var(--purple), var(--blue));
+  }
+
+  .flow-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 28px;
+    text-align: center;
+  }
+
+  /* END-TO-END FLOW */
+  .e2e-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: nowrap;
+    gap: 0;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+
+  .flow-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 90px;
+  }
+
+  .flow-node {
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    border: 1px solid;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  .flow-arrow {
+    font-size: 18px;
+    color: var(--text3);
+    min-width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+    margin-top: -18px;
+  }
+
+  /* GRID LAYOUTS */
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+
+  /* ENGINE CARDS */
+  .engine-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    position: relative;
+    transition: all 0.2s;
+    cursor: default;
+  }
+
+  .engine-card:hover {
+    border-color: var(--gold);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+
+  .engine-card .accent-bar {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 3px;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .engine-card .card-icon {
+    font-size: 24px;
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  .engine-card .card-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .engine-card .card-desc {
+    font-size: 11px;
+    color: var(--text2);
+    line-height: 1.5;
+  }
+
+  .engine-card .card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 10px;
+  }
+
+  .tag {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+
+  /* COLORS */
+  .c-gold   { color: var(--gold); }
+  .c-blue   { color: var(--blue2); }
+  .c-green  { color: var(--green2); }
+  .c-red    { color: var(--red); }
+  .c-purple { color: var(--purple2); }
+  .c-cyan   { color: var(--cyan2); }
+  .c-orange { color: var(--orange2); }
+
+  .bg-gold   { background: rgba(240,180,41,0.12); border-color: rgba(240,180,41,0.3); }
+  .bg-blue   { background: rgba(31,111,235,0.12); border-color: rgba(56,139,253,0.3); }
+  .bg-green  { background: rgba(46,160,67,0.12);  border-color: rgba(63,185,80,0.3); }
+  .bg-red    { background: rgba(218,54,51,0.12);  border-color: rgba(218,54,51,0.3); }
+  .bg-purple { background: rgba(137,87,229,0.12); border-color: rgba(163,113,247,0.3); }
+  .bg-cyan   { background: rgba(13,148,136,0.12); border-color: rgba(45,212,191,0.3); }
+  .bg-orange { background: rgba(227,98,27,0.12);  border-color: rgba(251,146,60,0.3); }
+
+  .bar-gold   { background: linear-gradient(90deg, var(--gold), var(--orange)); }
+  .bar-blue   { background: linear-gradient(90deg, var(--blue), var(--blue2)); }
+  .bar-green  { background: linear-gradient(90deg, var(--green), var(--green2)); }
+  .bar-red    { background: linear-gradient(90deg, var(--red), #f87171); }
+  .bar-purple { background: linear-gradient(90deg, var(--purple), var(--purple2)); }
+  .bar-cyan   { background: linear-gradient(90deg, var(--cyan), var(--cyan2)); }
+  .bar-orange { background: linear-gradient(90deg, var(--orange), var(--orange2)); }
+
+  .tag-gold   { background: rgba(240,180,41,0.15); color: var(--gold); }
+  .tag-blue   { background: rgba(56,139,253,0.15); color: var(--blue2); }
+  .tag-green  { background: rgba(63,185,80,0.15);  color: var(--green2); }
+  .tag-red    { background: rgba(218,54,51,0.15);  color: #f87171; }
+  .tag-purple { background: rgba(163,113,247,0.15);color: var(--purple2); }
+  .tag-cyan   { background: rgba(45,212,191,0.15); color: var(--cyan2); }
+  .tag-orange { background: rgba(251,146,60,0.15); color: var(--orange2); }
+  .tag-gray   { background: rgba(139,148,158,0.15);color: var(--text2); }
+
+  /* ARCHITECTURE LAYERS */
+  .layer-block {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+
+  .layer-label {
+    position: absolute;
+    top: -11px;
+    left: 20px;
+    background: var(--bg);
+    padding: 0 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+
+  .layer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .layer-chip {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid;
+  }
+
+  /* DATA FLOW DIAGRAM */
+  .data-flow {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    position: relative;
+  }
+
+  .df-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 0;
+    position: relative;
+  }
+
+  .df-box {
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid;
+    text-align: center;
+    min-width: 140px;
+    position: relative;
+  }
+
+  .df-arrow-down {
+    text-align: center;
+    color: var(--text3);
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  /* TECH STACK */
+  .tech-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+  }
+
+  .tech-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 10px;
+    text-align: center;
+    transition: all 0.2s;
+  }
+
+  .tech-item:hover {
+    border-color: var(--gold);
+    background: rgba(240,180,41,0.05);
+  }
+
+  .tech-icon { font-size: 22px; margin-bottom: 6px; }
+  .tech-name { font-size: 11px; font-weight: 600; color: var(--text); }
+  .tech-cat  { font-size: 10px; color: var(--text3); margin-top: 2px; }
+
+  /* PERFORMANCE TARGETS */
+  .perf-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .perf-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+
+  .perf-value {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--green2);
+    margin-bottom: 4px;
+  }
+
+  .perf-label {
+    font-size: 11px;
+    color: var(--text2);
+    line-height: 1.4;
+  }
+
+  /* PHASE TIMELINE */
+  .timeline {
+    position: relative;
+    padding-left: 32px;
+  }
+
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, var(--gold), var(--purple), var(--blue), var(--green));
+  }
+
+  .timeline-item {
+    position: relative;
+    margin-bottom: 20px;
+  }
+
+  .timeline-dot {
+    position: absolute;
+    left: -27px;
+    top: 14px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--bg);
+  }
+
+  .timeline-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+
+  .timeline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .timeline-phase {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+
+  .timeline-badge {
+    font-size: 10px;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+
+  .timeline-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .timeline-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  /* SCORE BARS */
+  .score-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .score-label {
+    font-size: 12px;
+    color: var(--text2);
+    min-width: 140px;
+  }
+
+  .score-bar-bg {
+    flex: 1;
+    height: 6px;
+    background: var(--bg3);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .score-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+  }
+
+  .score-pct {
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 36px;
+    text-align: right;
+  }
+
+  /* SIGNAL EXAMPLE */
+  .signal-box {
+    background: #0d1117;
+    border: 1px solid var(--green);
+    border-radius: 12px;
+    padding: 20px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+  }
+
+  .signal-key   { color: var(--text2); }
+  .signal-str   { color: var(--green2); }
+  .signal-num   { color: var(--orange2); }
+  .signal-bool  { color: var(--purple2); }
+
+  /* SECURITY PILLARS */
+  .pillars {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .pillar {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    text-align: center;
+  }
+
+  .pillar-icon { font-size: 28px; margin-bottom: 10px; }
+  .pillar-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .pillar-list  { list-style: none; }
+  .pillar-list li { font-size: 11px; color: var(--text2); padding: 2px 0; }
+
+  /* BROKER GRID */
+  .broker-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px;
+  }
+
+  .broker-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 8px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+
+  .broker-card:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+
+  .broker-card .broker-icon { font-size: 20px; margin-bottom: 6px; }
+
+  /* FOOTER */
+  .footer {
+    border-top: 1px solid var(--border);
+    padding: 24px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 48px;
+    color: var(--text3);
+    font-size: 11px;
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+  /* GLOW */
+  .glow-gold { box-shadow: 0 0 30px rgba(240,180,41,0.15); }
+  .glow-blue { box-shadow: 0 0 30px rgba(31,111,235,0.15); }
+
+  /* RESPONSIVE */
+  @media (max-width: 1200px) {
+    .tech-grid { grid-template-columns: repeat(4, 1fr); }
+    .broker-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  /* ANIMATE */
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  .live-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green2);
+    animation: pulse 2s infinite;
+    margin-right: 6px;
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">🦁</div>
+    <div class="logo-text">
+      <h1>BLACK LION AI</h1>
+      <p>Enterprise Algorithmic Trading Platform — System Architecture</p>
+    </div>
+  </div>
+  <div class="header-stats">
+    <div class="stat">
+      <div class="stat-num">30</div>
+      <div class="stat-label">SRS Docs</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">20+</div>
+      <div class="stat-label">Engines</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">300+</div>
+      <div class="stat-label">Features</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">99.99%</div>
+      <div class="stat-label">Uptime</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num c-green">&lt;250ms</div>
+      <div class="stat-label">Execution</div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- END-TO-END FLOW -->
+  <div class="section-title"><h2>End-to-End Trading Flow</h2></div>
+
+  <div class="flow-container glow-gold">
+    <div class="flow-title">Market Data → Signal → Risk → Execution → Analytics → Learning</div>
+
+    <div class="e2e-flow">
+      <div class="flow-step">
+        <div class="flow-node bg-cyan" style="color:var(--cyan2)">📡 Market<br>Data</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-blue" style="color:var(--blue2)">⚙️ Feature<br>Engine</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-gold" style="color:var(--gold)">📊 Market<br>Structure</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-gold" style="color:var(--gold)">💧 Liquidity<br>Engine</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-gold" style="color:var(--gold)">🧱 Order<br>Block</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-gold" style="color:var(--gold)">📐 FVG<br>Engine</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-orange" style="color:var(--orange2)">🎯 ICT<br>Engine</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-purple" style="color:var(--purple2)">⚖️ Rule<br>Engine</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-blue" style="color:var(--blue2)">🤖 AI<br>Decision</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-purple" style="color:var(--purple2)">📈 Probability<br>Engine</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-red" style="color:#f87171">🛡️ Risk<br>Engine</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-green" style="color:var(--green2)">⚡ Execution<br>Engine</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="flow-node bg-cyan" style="color:var(--cyan2)">📋 Broker/<br>Exchange</div>
+      </div>
+    </div>
+
+    <div style="display:flex; align-items:center; justify-content:center; gap:32px; margin-top:24px; padding-top:20px; border-top:1px solid var(--border);">
+      <div style="text-align:center;">
+        <div style="font-size:11px; color:var(--text3); margin-bottom:8px;">Analytics Loop</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="tag tag-cyan" style="padding:4px 10px;">📊 Analytics</span>
+          <span style="color:var(--text3)">→</span>
+          <span class="tag tag-blue" style="padding:4px 10px;">🧠 Learning</span>
+          <span style="color:var(--text3)">→</span>
+          <span class="tag tag-purple" style="padding:4px 10px;">🔄 Retrain</span>
+          <span style="color:var(--text3)">→</span>
+          <span class="tag tag-gold" style="padding:4px 10px;">✅ Deploy</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARCHITECTURE LAYERS -->
+  <div class="section-title"><h2>Clean Architecture Layers</h2></div>
+
+  <div class="flow-container">
+    <div class="layer-block" style="border-color:rgba(56,139,253,0.4)">
+      <div class="layer-label c-blue">Layer 1 — Presentation / Clients</div>
+      <div class="layer-inner">
+        <span class="layer-chip bg-blue c-blue">🌐 Web Dashboard</span>
+        <span class="layer-chip bg-blue c-blue">📱 Mobile App</span>
+        <span class="layer-chip bg-blue c-blue">🤖 Telegram Bot</span>
+        <span class="layer-chip bg-blue c-blue">🔗 REST API</span>
+        <span class="layer-chip bg-blue c-blue">📡 TradingView Webhook</span>
+        <span class="layer-chip bg-blue c-blue">🖥️ MT5 EA</span>
+        <span class="layer-chip bg-blue c-blue">👨‍💼 Admin Panel</span>
+      </div>
+    </div>
+
+    <div style="text-align:center; font-size:18px; color:var(--text3); margin:4px 0;">↕</div>
+
+    <div class="layer-block" style="border-color:rgba(137,87,229,0.4)">
+      <div class="layer-label c-purple">Layer 2 — API Gateway</div>
+      <div class="layer-inner">
+        <span class="layer-chip bg-purple c-purple">🔐 JWT Auth</span>
+        <span class="layer-chip bg-purple c-purple">⚡ Rate Limiting</span>
+        <span class="layer-chip bg-purple c-purple">🔀 Load Balancing</span>
+        <span class="layer-chip bg-purple c-purple">📋 Request Validation</span>
+        <span class="layer-chip bg-purple c-purple">🔄 API Versioning</span>
+        <span class="layer-chip bg-purple c-purple">📡 WebSocket</span>
+        <span class="layer-chip bg-purple c-purple">📖 Swagger/OpenAPI</span>
+      </div>
+    </div>
+
+    <div style="text-align:center; font-size:18px; color:var(--text3); margin:4px 0;">↕</div>
+
+    <div class="layer-block" style="border-color:rgba(240,180,41,0.4)">
+      <div class="layer-label c-gold">Layer 3 — Domain / Business Logic (CORE)</div>
+      <div class="layer-inner">
+        <span class="layer-chip bg-gold c-gold">📊 Market Structure</span>
+        <span class="layer-chip bg-gold c-gold">💧 Liquidity</span>
+        <span class="layer-chip bg-gold c-gold">🧱 Order Block</span>
+        <span class="layer-chip bg-gold c-gold">📐 FVG</span>
+        <span class="layer-chip bg-gold c-gold">🎯 ICT</span>
+        <span class="layer-chip bg-gold c-gold">⚖️ Rule Engine</span>
+        <span class="layer-chip bg-gold c-gold">🤖 AI Engine</span>
+        <span class="layer-chip bg-gold c-gold">📈 Probability</span>
+        <span class="layer-chip bg-gold c-gold">🛡️ Risk</span>
+        <span class="layer-chip bg-gold c-gold">⚡ Execution</span>
+        <span class="layer-chip bg-gold c-gold">📋 Analytics</span>
+        <span class="layer-chip bg-gold c-gold">🔬 Backtesting</span>
+      </div>
+    </div>
+
+    <div style="text-align:center; font-size:18px; color:var(--text3); margin:4px 0;">↕</div>
+
+    <div class="layer-block" style="border-color:rgba(13,148,136,0.4)">
+      <div class="layer-label c-cyan">Layer 4 — Infrastructure</div>
+      <div class="layer-inner">
+        <span class="layer-chip bg-cyan c-cyan">🐘 PostgreSQL</span>
+        <span class="layer-chip bg-cyan c-cyan">⏱️ TimescaleDB</span>
+        <span class="layer-chip bg-cyan c-cyan">⚡ Redis</span>
+        <span class="layer-chip bg-cyan c-cyan">🐰 RabbitMQ</span>
+        <span class="layer-chip bg-cyan c-cyan">📊 Kafka</span>
+        <span class="layer-chip bg-cyan c-cyan">🐳 Docker</span>
+        <span class="layer-chip bg-cyan c-cyan">☸️ Kubernetes</span>
+        <span class="layer-chip bg-cyan c-cyan">📦 MinIO/S3</span>
+        <span class="layer-chip bg-cyan c-cyan">📡 Prometheus</span>
+        <span class="layer-chip bg-cyan c-cyan">📈 Grafana</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRADING ENGINES -->
+  <div class="section-title"><h2>Trading Intelligence Engines</h2></div>
+
+  <div class="grid-4" style="margin-bottom:16px;">
+
+    <div class="engine-card">
+      <div class="accent-bar bar-cyan"></div>
+      <span class="card-icon">📡</span>
+      <div class="card-title c-cyan">Market Data Engine</div>
+      <div class="card-desc">Multi-source data collection, validation, normalization. Real-time tick streaming + historical OHLCV.</div>
+      <div class="card-tags">
+        <span class="tag tag-cyan">CCXT</span>
+        <span class="tag tag-cyan">yfinance</span>
+        <span class="tag tag-cyan">TradingView</span>
+        <span class="tag tag-gray">&lt;1ms tick</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-blue"></div>
+      <span class="card-icon">⚙️</span>
+      <div class="card-title c-blue">Feature Engineering</div>
+      <div class="card-desc">300+ engineered features across 15 categories: price, trend, volume, ICT, liquidity, correlation, session.</div>
+      <div class="card-tags">
+        <span class="tag tag-blue">300+ features</span>
+        <span class="tag tag-blue">AI-ready</span>
+        <span class="tag tag-gray">&lt;5ms</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-gold"></div>
+      <span class="card-icon">📊</span>
+      <div class="card-title c-gold">Market Structure Engine</div>
+      <div class="card-desc">Swing High/Low detection. HH/HL/LH/LL classification. BOS & CHOCH detection. Trend strength 0–100.</div>
+      <div class="card-tags">
+        <span class="tag tag-gold">BOS</span>
+        <span class="tag tag-gold">CHOCH</span>
+        <span class="tag tag-gold">Multi-TF</span>
+        <span class="tag tag-gray">&lt;10ms</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-gold"></div>
+      <span class="card-icon">💧</span>
+      <div class="card-title c-gold">Liquidity Engine</div>
+      <div class="card-desc">BSL/SSL detection, Equal H/L, Liquidity sweeps, Stop hunts, Liquidity voids. SMC methodology.</div>
+      <div class="card-tags">
+        <span class="tag tag-gold">BSL/SSL</span>
+        <span class="tag tag-gold">Sweeps</span>
+        <span class="tag tag-gold">Stop Hunt</span>
+        <span class="tag tag-gray">&lt;5ms</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-gold"></div>
+      <span class="card-icon">🧱</span>
+      <div class="card-title c-gold">Order Block Engine</div>
+      <div class="card-desc">Bullish/Bearish OB detection. Displacement validation (Body>1.5×ATR). Fresh/Mitigated/Broken lifecycle.</div>
+      <div class="card-tags">
+        <span class="tag tag-gold">Fresh OB</span>
+        <span class="tag tag-gold">Mitigated</span>
+        <span class="tag tag-gold">A+ Grade</span>
+        <span class="tag tag-gray">&lt;5ms</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-gold"></div>
+      <span class="card-icon">📐</span>
+      <div class="card-title c-gold">Fair Value Gap Engine</div>
+      <div class="card-desc">Bullish/Bearish FVG detection (3-candle pattern). IFVG tracking. Gap fill monitoring. Confluence scoring.</div>
+      <div class="card-tags">
+        <span class="tag tag-gold">FVG</span>
+        <span class="tag tag-gold">IFVG</span>
+        <span class="tag tag-gold">Fill %</span>
+        <span class="tag tag-gray">&lt;4ms</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-orange"></div>
+      <span class="card-icon">🎯</span>
+      <div class="card-title c-orange">ICT Engine</div>
+      <div class="card-desc">Premium/Discount zones, OTE (62–79% Fib), Kill Zones, Judas Swing, AMD Cycle, SMT Divergence, Breaker Blocks.</div>
+      <div class="card-tags">
+        <span class="tag tag-orange">OTE</span>
+        <span class="tag tag-orange">AMD</span>
+        <span class="tag tag-orange">SMT</span>
+        <span class="tag tag-orange">Kill Zone</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-purple"></div>
+      <span class="card-icon">⚖️</span>
+      <div class="card-title c-purple">Rule Engine</div>
+      <div class="card-desc">Deterministic confluence scoring. BUY/SELL/NO TRADE. Minimum score 80. All filters applied.</div>
+      <div class="card-tags">
+        <span class="tag tag-purple">Deterministic</span>
+        <span class="tag tag-purple">Confluence</span>
+        <span class="tag tag-purple">Score 0–100</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- CONFLUENCE SCORING -->
+  <div class="flow-container" style="margin-bottom:16px;">
+    <div class="flow-title">Rule Engine — Confluence Score Weights</div>
+    <div style="max-width:500px; margin:0 auto;">
+      <div class="score-row">
+        <span class="score-label">Market Structure</span>
+        <div class="score-bar-bg"><div class="score-bar-fill bar-gold" style="width:25%"></div></div>
+        <span class="score-pct c-gold">25%</span>
+      </div>
+      <div class="score-row">
+        <span class="score-label">Liquidity</span>
+        <div class="score-bar-bg"><div class="score-bar-fill bar-cyan" style="width:15%"></div></div>
+        <span class="score-pct c-cyan">15%</span>
+      </div>
+      <div class="score-row">
+        <span class="score-label">Order Block</span>
+        <div class="score-bar-bg"><div class="score-bar-fill bar-gold" style="width:15%"></div></div>
+        <span class="score-pct c-gold">15%</span>
+      </div>
+      <div class="score-row">
+        <span class="score-label">ICT Context</span>
+        <div class="score-bar-bg"><div class="score-bar-fill bar-orange" style="width:15%"></div></div>
+        <span class="score-pct c-orange">15%</span>
+      </div>
+      <div class="score-row">
+        <span class="score-label">Fair Value Gap</span>
+        <div class="score-bar-bg"><div class="score-bar-fill bar-blue" style="width:10%"></div></div>
+        <span class="score-pct c-blue">10%</span>
+      </div>
+      <div class="score-row">
+        <span class="score-label">Trend</span>
+        <div class="score-bar-bg"><div class="score-bar-fill bar-green" style="width:10%"></div></div>
+        <span class="score-pct c-green">10%</span>
+      </div>
+      <div class="score-row">
+        <span class="score-label">Volatility</span>
+        <div class="score-bar-bg"><div class="score-bar-fill bar-purple" style="width:5%"></div></div>
+        <span class="score-pct c-purple">5%</span>
+      </div>
+      <div class="score-row">
+        <span class="score-label">Session</span>
+        <div class="score-bar-bg"><div class="score-bar-fill" style="width:5%;background:var(--text2)"></div></div>
+        <span class="score-pct" style="color:var(--text2)">5%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI + PROBABILITY + RISK -->
+  <div class="section-title"><h2>AI Decision Layer</h2></div>
+
+  <div class="grid-3" style="margin-bottom:16px;">
+
+    <div class="engine-card">
+      <div class="accent-bar bar-blue"></div>
+      <span class="card-icon">🤖</span>
+      <div class="card-title c-blue">AI Decision Engine</div>
+      <div class="card-desc">Ensemble ML models for probability-based prediction. Never places trades directly.</div>
+      <div style="margin-top:12px;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11px;">
+          <div class="tag tag-blue" style="padding:4px 8px; text-align:center;">XGBoost (Primary)</div>
+          <div class="tag tag-blue" style="padding:4px 8px; text-align:center;">LightGBM</div>
+          <div class="tag tag-blue" style="padding:4px 8px; text-align:center;">CatBoost</div>
+          <div class="tag tag-blue" style="padding:4px 8px; text-align:center;">Random Forest</div>
+          <div class="tag tag-purple" style="padding:4px 8px; text-align:center;">LSTM (Exp.)</div>
+          <div class="tag tag-purple" style="padding:4px 8px; text-align:center;">Transformer</div>
+          <div class="tag tag-gold" style="padding:4px 8px; text-align:center; grid-column:1/-1;">Grok (Sentiment + Explanation)</div>
+        </div>
+      </div>
+      <div class="card-tags">
+        <span class="tag tag-blue">SHAP</span>
+        <span class="tag tag-blue">Drift Detection</span>
+        <span class="tag tag-gray">&lt;20ms</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-purple"></div>
+      <span class="card-icon">📈</span>
+      <div class="card-title c-purple">Probability Engine</div>
+      <div class="card-desc">Statistical probability that setup reaches TP before SL. Historical similarity + Expected Value.</div>
+      <div style="margin-top:12px; font-size:11px;">
+        <div style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px; font-family:monospace; line-height:1.8;">
+          <span style="color:var(--text2)">EV</span> = <span style="color:var(--green2)">(Win% × AvgWin)</span><br>
+          <span style="color:var(--text2)">   </span>- <span style="color:var(--red)">(Loss% × AvgLoss)</span><br>
+          <br>
+          <span style="color:var(--gold)">EV > 0</span> <span style="color:var(--text2)">→ APPROVED</span>
+        </div>
+      </div>
+      <div class="card-tags">
+        <span class="tag tag-purple">Calibrated</span>
+        <span class="tag tag-purple">Platt Scaling</span>
+        <span class="tag tag-gray">&lt;10ms</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-red"></div>
+      <span class="card-icon">🛡️</span>
+      <div class="card-title c-red">Risk Management Engine</div>
+      <div class="card-desc">Capital protection. No trade executes without risk approval. Position sizing, drawdown, exposure control.</div>
+      <div style="margin-top:12px; font-size:11px;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          <div style="background:rgba(218,54,51,0.08); border:1px solid rgba(218,54,51,0.2); border-radius:6px; padding:6px; text-align:center;">
+            <div style="color:var(--red); font-weight:700;">3%</div>
+            <div style="color:var(--text3)">Daily DD</div>
+          </div>
+          <div style="background:rgba(218,54,51,0.08); border:1px solid rgba(218,54,51,0.2); border-radius:6px; padding:6px; text-align:center;">
+            <div style="color:var(--red); font-weight:700;">6%</div>
+            <div style="color:var(--text3)">Weekly DD</div>
+          </div>
+          <div style="background:rgba(218,54,51,0.08); border:1px solid rgba(218,54,51,0.2); border-radius:6px; padding:6px; text-align:center;">
+            <div style="color:var(--red); font-weight:700;">1:2</div>
+            <div style="color:var(--text3)">Min R:R</div>
+          </div>
+          <div style="background:rgba(218,54,51,0.08); border:1px solid rgba(218,54,51,0.2); border-radius:6px; padding:6px; text-align:center;">
+            <div style="color:var(--red); font-weight:700;">1%</div>
+            <div style="color:var(--text3)">Risk/Trade</div>
+          </div>
+        </div>
+      </div>
+      <div class="card-tags">
+        <span class="tag tag-red">Position Sizing</span>
+        <span class="tag tag-red">Portfolio Heat</span>
+        <span class="tag tag-red">Correlation</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- SIGNAL OUTPUT EXAMPLE -->
+  <div class="section-title"><h2>Signal Output Example</h2></div>
+
+  <div class="grid-2" style="margin-bottom:32px;">
+    <div class="signal-box">
+<div style="color:var(--text2); margin-bottom:8px; font-size:11px;">// Signal from Rule Engine + AI + Risk</div>
+{<br>
+&nbsp;&nbsp;<span class="signal-key">"symbol"</span>: <span class="signal-str">"XAUUSD"</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"direction"</span>: <span class="signal-str">"BUY"</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"entry"</span>: <span class="signal-num">3398.50</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"stop_loss"</span>: <span class="signal-num">3392.20</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"tp1"</span>: <span class="signal-num">3406.80</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"tp2"</span>: <span class="signal-num">3415.00</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"rr"</span>: <span class="signal-num">2.5</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"rule_score"</span>: <span class="signal-num">94</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"ai_confidence"</span>: <span class="signal-num">91</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"probability"</span>: <span class="signal-num">0.914</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"ev"</span>: <span class="signal-num">2.18</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"risk_grade"</span>: <span class="signal-str">"LOW"</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"lot_size"</span>: <span class="signal-num">0.15</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"quality"</span>: <span class="signal-str">"A+"</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"approved"</span>: <span class="signal-bool">true</span>,<br>
+&nbsp;&nbsp;<span class="signal-key">"reasons"</span>: [<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="signal-str">"Bullish BOS on H4"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="signal-str">"Discount Zone"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="signal-str">"Fresh Bullish OB"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="signal-str">"Bullish FVG"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="signal-str">"London Kill Zone"</span><br>
+&nbsp;&nbsp;]<br>
+}
+    </div>
+
+    <div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:12px; color:var(--text2); text-transform:uppercase; letter-spacing:1px;">Approval Chain</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="width:24px; height:24px; border-radius:50%; background:var(--green); display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;">✓</span>
+            <div style="background:rgba(46,160,67,0.1); border:1px solid rgba(63,185,80,0.3); border-radius:8px; padding:8px 14px; flex:1; font-size:12px;">
+              <strong class="c-gold">Rule Engine</strong> — Confluence: 94/100
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="width:24px; height:24px; border-radius:50%; background:var(--green); display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;">✓</span>
+            <div style="background:rgba(46,160,67,0.1); border:1px solid rgba(63,185,80,0.3); border-radius:8px; padding:8px 14px; flex:1; font-size:12px;">
+              <strong class="c-blue">AI Decision</strong> — Confidence: 91%, BUY
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="width:24px; height:24px; border-radius:50%; background:var(--green); display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;">✓</span>
+            <div style="background:rgba(46,160,67,0.1); border:1px solid rgba(63,185,80,0.3); border-radius:8px; padding:8px 14px; flex:1; font-size:12px;">
+              <strong class="c-purple">Probability</strong> — 91.4%, EV: +2.18R
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="width:24px; height:24px; border-radius:50%; background:var(--green); display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;">✓</span>
+            <div style="background:rgba(46,160,67,0.1); border:1px solid rgba(63,185,80,0.3); border-radius:8px; padding:8px 14px; flex:1; font-size:12px;">
+              <strong class="c-red">Risk Engine</strong> — Lot: 0.15, Grade: LOW
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:4px;">
+            <span style="width:24px; height:24px; border-radius:50%; background:var(--gold); display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;">⚡</span>
+            <div style="background:rgba(240,180,41,0.1); border:1px solid rgba(240,180,41,0.4); border-radius:8px; padding:8px 14px; flex:1; font-size:12px;">
+              <strong class="c-gold">Execution Engine</strong> — XAUUSD BUY 0.15 @ 3398.50
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INFRASTRUCTURE ENGINES -->
+  <div class="section-title"><h2>Infrastructure & Support Engines</h2></div>
+
+  <div class="grid-4" style="margin-bottom:32px;">
+
+    <div class="engine-card">
+      <div class="accent-bar bar-green"></div>
+      <span class="card-icon">⚡</span>
+      <div class="card-title c-green">Execution Engine</div>
+      <div class="card-desc">Safe trade execution. Slippage protection, partial close, trailing stop, position sync, retry logic.</div>
+      <div class="card-tags">
+        <span class="tag tag-green">Market Orders</span>
+        <span class="tag tag-green">Pending</span>
+        <span class="tag tag-green">Trailing Stop</span>
+        <span class="tag tag-gray">&lt;100ms</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-blue"></div>
+      <span class="card-icon">🔬</span>
+      <div class="card-title c-blue">Backtesting Engine</div>
+      <div class="card-desc">Historical replay >100k candles/sec. Monte Carlo, Walk-Forward, full metrics suite.</div>
+      <div class="card-tags">
+        <span class="tag tag-blue">Monte Carlo</span>
+        <span class="tag tag-blue">Walk-Forward</span>
+        <span class="tag tag-blue">Sharpe/Calmar</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-orange"></div>
+      <span class="card-icon">🎛️</span>
+      <div class="card-title c-orange">Optimization Engine</div>
+      <div class="card-desc">Bayesian Optimization, Genetic Algorithm, Particle Swarm. Multi-objective Pareto ranking.</div>
+      <div class="card-tags">
+        <span class="tag tag-orange">Bayesian Opt</span>
+        <span class="tag tag-orange">Genetic Algo</span>
+        <span class="tag tag-orange">Overfitting Guard</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-cyan"></div>
+      <span class="card-icon">📋</span>
+      <div class="card-title c-cyan">Analytics Engine</div>
+      <div class="card-desc">Real-time dashboards, daily/weekly/monthly reports. Equity curves, drawdown, heat maps.</div>
+      <div class="card-tags">
+        <span class="tag tag-cyan">PDF/CSV/JSON</span>
+        <span class="tag tag-cyan">AI Metrics</span>
+        <span class="tag tag-gray">&lt;1s refresh</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-gold"></div>
+      <span class="card-icon">🔔</span>
+      <div class="card-title c-gold">Notification Engine</div>
+      <div class="card-desc">Multi-channel delivery: Telegram, Discord, Email, SMS. Priority queuing, retry, templates.</div>
+      <div class="card-tags">
+        <span class="tag tag-gold">Telegram</span>
+        <span class="tag tag-gold">Discord</span>
+        <span class="tag tag-gold">Email</span>
+        <span class="tag tag-gold">SMS</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-green"></div>
+      <span class="card-icon">💚</span>
+      <div class="card-title c-green">Monitoring & Health</div>
+      <div class="card-desc">Continuous health checks for all services. Auto-recovery, broker monitoring, AI drift alerts.</div>
+      <div class="card-tags">
+        <span class="tag tag-green">Prometheus</span>
+        <span class="tag tag-green">Grafana</span>
+        <span class="tag tag-green">Auto-Restart</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-red"></div>
+      <span class="card-icon">🔒</span>
+      <div class="card-title c-red">Security Engine</div>
+      <div class="card-desc">JWT + OAuth2 + MFA auth. RBAC roles. AES-256 encryption. Immutable audit logs.</div>
+      <div class="card-tags">
+        <span class="tag tag-red">JWT + MFA</span>
+        <span class="tag tag-red">AES-256</span>
+        <span class="tag tag-red">TLS 1.3</span>
+      </div>
+    </div>
+
+    <div class="engine-card">
+      <div class="accent-bar bar-purple"></div>
+      <span class="card-icon">🌐</span>
+      <div class="card-title c-purple">API Gateway</div>
+      <div class="card-desc">Single entry point. Rate limiting, versioning, WebSocket, load balancing, OpenAPI docs.</div>
+      <div class="card-tags">
+        <span class="tag tag-purple">REST</span>
+        <span class="tag tag-purple">WebSocket</span>
+        <span class="tag tag-purple">gRPC</span>
+        <span class="tag tag-purple">GraphQL</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- BROKER / EXCHANGE INTEGRATIONS -->
+  <div class="section-title"><h2>Supported Brokers & Exchanges</h2></div>
+
+  <div class="broker-grid" style="margin-bottom:32px;">
+    <div class="broker-card">
+      <div class="broker-icon">🖥️</div>MetaTrader 5
+    </div>
+    <div class="broker-card">
+      <div class="broker-icon">📊</div>MetaTrader 4
+    </div>
+    <div class="broker-card">
+      <div class="broker-icon">🟡</div>Binance Futures
+    </div>
+    <div class="broker-card">
+      <div class="broker-icon">🔵</div>Bybit
+    </div>
+    <div class="broker-card">
+      <div class="broker-icon">📈</div>TradingView
+    </div>
+    <div class="broker-card">
+      <div class="broker-icon">🏦</div>IC Markets
+    </div>
+    <div class="broker-card">
+      <div class="broker-icon">💹</div>Pepperstone
+    </div>
+  </div>
+
+  <!-- TECH STACK -->
+  <div class="section-title"><h2>Technology Stack</h2></div>
+
+  <div class="tech-grid" style="margin-bottom:32px;">
+    <div class="tech-item">
+      <div class="tech-icon">🐍</div>
+      <div class="tech-name">Python 3.12+</div>
+      <div class="tech-cat">Backend</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">⚡</div>
+      <div class="tech-name">FastAPI</div>
+      <div class="tech-cat">API Server</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🐘</div>
+      <div class="tech-name">PostgreSQL 17</div>
+      <div class="tech-cat">Primary DB</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">⏱️</div>
+      <div class="tech-name">TimescaleDB</div>
+      <div class="tech-cat">Time-Series</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🔴</div>
+      <div class="tech-name">Redis</div>
+      <div class="tech-cat">Cache</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🐳</div>
+      <div class="tech-name">Docker</div>
+      <div class="tech-cat">Container</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">☸️</div>
+      <div class="tech-name">Kubernetes</div>
+      <div class="tech-cat">Orchestration</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🚀</div>
+      <div class="tech-name">XGBoost</div>
+      <div class="tech-cat">ML Primary</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">⚡</div>
+      <div class="tech-name">LightGBM</div>
+      <div class="tech-cat">ML Secondary</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🔥</div>
+      <div class="tech-name">PyTorch</div>
+      <div class="tech-cat">Deep Learning</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🤖</div>
+      <div class="tech-name">Grok AI (xAI)</div>
+      <div class="tech-cat">Explanation</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🐰</div>
+      <div class="tech-name">RabbitMQ</div>
+      <div class="tech-cat">Event Bus</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">📊</div>
+      <div class="tech-name">Prometheus</div>
+      <div class="tech-cat">Metrics</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">📈</div>
+      <div class="tech-name">Grafana</div>
+      <div class="tech-cat">Dashboards</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">⚛️</div>
+      <div class="tech-name">Next.js</div>
+      <div class="tech-cat">Frontend</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🎨</div>
+      <div class="tech-name">TailwindCSS</div>
+      <div class="tech-cat">UI Styles</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🗄️</div>
+      <div class="tech-name">SQLAlchemy</div>
+      <div class="tech-cat">ORM</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🔄</div>
+      <div class="tech-name">Alembic</div>
+      <div class="tech-cat">Migrations</div>
+    </div>
+  </div>
+
+  <!-- DATABASE ARCHITECTURE -->
+  <div class="section-title"><h2>Database Architecture</h2></div>
+
+  <div class="grid-4" style="margin-bottom:32px;">
+    <div class="engine-card">
+      <div class="accent-bar bar-blue"></div>
+      <span class="card-icon">🐘</span>
+      <div class="card-title c-blue">PostgreSQL 17</div>
+      <div class="card-desc">Operational data</div>
+      <div class="card-tags">
+        <span class="tag tag-gray">users</span>
+        <span class="tag tag-gray">accounts</span>
+        <span class="tag tag-gray">trades</span>
+        <span class="tag tag-gray">orders</span>
+        <span class="tag tag-gray">signals</span>
+        <span class="tag tag-gray">positions</span>
+        <span class="tag tag-gray">licenses</span>
+      </div>
+    </div>
+    <div class="engine-card">
+      <div class="accent-bar bar-cyan"></div>
+      <span class="card-icon">⏱️</span>
+      <div class="card-title c-cyan">TimescaleDB</div>
+      <div class="card-desc">Time-series data — partitioned by month</div>
+      <div class="card-tags">
+        <span class="tag tag-gray">candles</span>
+        <span class="tag tag-gray">tick data</span>
+        <span class="tag tag-gray">indicators</span>
+        <span class="tag tag-gray">features</span>
+        <span class="tag tag-gray">market events</span>
+      </div>
+    </div>
+    <div class="engine-card">
+      <div class="accent-bar bar-red"></div>
+      <span class="card-icon">🔴</span>
+      <div class="card-title c-red">Redis Cache</div>
+      <div class="card-desc">Low-latency hot data</div>
+      <div class="card-tags">
+        <span class="tag tag-gray">live prices</span>
+        <span class="tag tag-gray">sessions</span>
+        <span class="tag tag-gray">AI predictions</span>
+        <span class="tag tag-gray">open positions</span>
+        <span class="tag tag-gray">broker status</span>
+      </div>
+    </div>
+    <div class="engine-card">
+      <div class="accent-bar bar-orange"></div>
+      <span class="card-icon">📦</span>
+      <div class="card-title c-orange">MinIO / S3</div>
+      <div class="card-desc">Object storage for large assets</div>
+      <div class="card-tags">
+        <span class="tag tag-gray">AI models</span>
+        <span class="tag tag-gray">reports</span>
+        <span class="tag tag-gray">datasets</span>
+        <span class="tag tag-gray">backups</span>
+        <span class="tag tag-gray">logs</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECURITY PILLARS -->
+  <div class="section-title"><h2>Security Architecture</h2></div>
+
+  <div class="pillars" style="margin-bottom:32px;">
+    <div class="pillar">
+      <div class="pillar-icon">🔐</div>
+      <div class="pillar-title c-blue">Authentication</div>
+      <ul class="pillar-list">
+        <li>JWT Tokens</li>
+        <li>OAuth2</li>
+        <li>MFA Required (Admin)</li>
+        <li>Argon2id hashing</li>
+        <li>Session timeout: 30m</li>
+      </ul>
+    </div>
+    <div class="pillar">
+      <div class="pillar-icon">🛡️</div>
+      <div class="pillar-title c-gold">Authorization</div>
+      <ul class="pillar-list">
+        <li>RBAC Roles</li>
+        <li>SUPER_ADMIN</li>
+        <li>ADMIN / TRADER</li>
+        <li>VIEWER / API_CLIENT</li>
+        <li>Per-endpoint perms</li>
+      </ul>
+    </div>
+    <div class="pillar">
+      <div class="pillar-icon">🔒</div>
+      <div class="pillar-title c-red">Encryption</div>
+      <ul class="pillar-list">
+        <li>AES-256 at rest</li>
+        <li>TLS 1.3 in transit</li>
+        <li>Secrets vault</li>
+        <li>No plaintext keys</li>
+        <li>Encrypted backups</li>
+      </ul>
+    </div>
+    <div class="pillar">
+      <div class="pillar-icon">📋</div>
+      <div class="pillar-title c-green">Audit</div>
+      <ul class="pillar-list">
+        <li>Immutable audit logs</li>
+        <li>All API calls logged</li>
+        <li>Brute-force detection</li>
+        <li>Injection protection</li>
+        <li>Rate limiting</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- PERFORMANCE TARGETS -->
+  <div class="section-title"><h2>Performance Targets</h2></div>
+
+  <div class="perf-grid" style="margin-bottom:32px;">
+    <div class="perf-card">
+      <div class="perf-value">&lt;50ms</div>
+      <div class="perf-label">API Response (cached)</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-value">&lt;100ms</div>
+      <div class="perf-label">AI Inference</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-value">&lt;250ms</div>
+      <div class="perf-label">Full Execution Pipeline</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-value">&lt;5ms</div>
+      <div class="perf-label">Risk Evaluation</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-value">&lt;10ms</div>
+      <div class="perf-label">Rule Engine</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-value">&lt;20ms</div>
+      <div class="perf-label">DB Query</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-value">100k/s</div>
+      <div class="perf-label">Candle Replay Speed</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-value">99.99%</div>
+      <div class="perf-label" style="color:var(--green2)">System Uptime</div>
+    </div>
+  </div>
+
+  <!-- IMPLEMENTATION PHASES -->
+  <div class="section-title"><h2>Implementation Roadmap (14 Phases)</h2></div>
+
+  <div class="timeline">
+
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:var(--cyan2)"></div>
+      <div class="timeline-card">
+        <div class="timeline-header">
+          <div class="timeline-phase c-cyan">Phase 1</div>
+          <div class="timeline-badge tag-cyan">Foundation</div>
+        </div>
+        <div class="timeline-title">Infrastructure & Database Migration</div>
+        <div style="font-size:12px; color:var(--text2)">SQLite → PostgreSQL + TimescaleDB + Redis. Docker Compose yangilash. Alembic migrations.</div>
+        <div class="timeline-items">
+          <span class="tag tag-cyan">PostgreSQL</span>
+          <span class="tag tag-cyan">TimescaleDB</span>
+          <span class="tag tag-cyan">Redis</span>
+          <span class="tag tag-cyan">Alembic</span>
+          <span class="tag tag-cyan">SQLAlchemy ORM</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:var(--blue2)"></div>
+      <div class="timeline-card">
+        <div class="timeline-header">
+          <div class="timeline-phase c-blue">Phase 2</div>
+          <div class="timeline-badge tag-blue">Data Layer</div>
+        </div>
+        <div class="timeline-title">Market Data Engine + Feature Engineering</div>
+        <div style="font-size:12px; color:var(--text2)">Multi-source data collection, 300+ engineered features, Feature Store.</div>
+        <div class="timeline-items">
+          <span class="tag tag-blue">CCXT</span>
+          <span class="tag tag-blue">yfinance</span>
+          <span class="tag tag-blue">300+ Features</span>
+          <span class="tag tag-blue">Feature Store</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:var(--gold)"></div>
+      <div class="timeline-card">
+        <div class="timeline-header">
+          <div class="timeline-phase c-gold">Phase 3-4</div>
+          <div class="timeline-badge tag-gold">Core Engines</div>
+        </div>
+        <div class="timeline-title">Market Structure + Liquidity + Order Block + FVG</div>
+        <div style="font-size:12px; color:var(--text2)">SMC/ICT asosli to'liq analiz engine'lari. BOS, CHOCH, EQL, OB, FVG.</div>
+        <div class="timeline-items">
+          <span class="tag tag-gold">BOS/CHOCH</span>
+          <span class="tag tag-gold">BSL/SSL</span>
+          <span class="tag tag-gold">Order Blocks</span>
+          <span class="tag tag-gold">FVG</span>
+          <span class="tag tag-gold">ICT</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:var(--purple2)"></div>
+      <div class="timeline-card">
+        <div class="timeline-header">
+          <div class="timeline-phase c-purple">Phase 5</div>
+          <div class="timeline-badge tag-purple">Decision</div>
+        </div>
+        <div class="timeline-title">Rule Engine (Deterministic Core)</div>
+        <div style="font-size:12px; color:var(--text2)">Confluence scoring 0–100. BUY/SELL/NO TRADE. Grok bilan tasdiqlash + sentiment gate.</div>
+        <div class="timeline-items">
+          <span class="tag tag-purple">Confluence 80+</span>
+          <span class="tag tag-purple">News Filter</span>
+          <span class="tag tag-purple">Spread Filter</span>
+          <span class="tag tag-purple">HTF Alignment</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:var(--blue2)"></div>
+      <div class="timeline-card">
+        <div class="timeline-header">
+          <div class="timeline-phase c-blue">Phase 6</div>
+          <div class="timeline-badge tag-blue">AI Upgrade</div>
+        </div>
+        <div class="timeline-title">AI Decision Engine (ML + Grok)</div>
+        <div style="font-size:12px; color:var(--text2)">XGBoost + LightGBM ensemble. Grok — sentiment gate + o'zbekcha izoh + real-time X/news. SHAP explainability.</div>
+        <div class="timeline-items">
+          <span class="tag tag-blue">XGBoost</span>
+          <span class="tag tag-blue">LightGBM</span>
+          <span class="tag tag-blue">Ensemble</span>
+          <span class="tag tag-gold">Grok</span>
+          <span class="tag tag-blue">SHAP</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:var(--purple2)"></div>
+      <div class="timeline-card">
+        <div class="timeline-header">
+          <div class="timeline-phase c-purple">Phase 7</div>
+          <div class="timeline-badge tag-purple">Probability</div>
+        </div>
+        <div class="timeline-title">Probability Engine + Risk Engine Upgrade</div>
+        <div style="font-size:12px; color:var(--text2)">EV calculation, Historical similarity, Portfolio heat, Correlation filter, ATR-based sizing.</div>
+        <div class="timeline-items">
+          <span class="tag tag-purple">EV > 0</span>
+          <span class="tag tag-red">Position Sizing</span>
+          <span class="tag tag-red">DD Protection</span>
+          <span class="tag tag-red">Correlation Filter</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:var(--green2)"></div>
+      <div class="timeline-card">
+        <div class="timeline-header">
+          <div class="timeline-phase c-green">Phase 8-10</div>
+          <div class="timeline-badge tag-green">Execution</div>
+        </div>
+        <div class="timeline-title">Execution + MT5 + Bybit + Backtesting</div>
+        <div style="font-size:12px; color:var(--text2)">Broker adapter pattern. MT5, Bybit integratsiya. Enterprise backtesting + optimization.</div>
+        <div class="timeline-items">
+          <span class="tag tag-green">MT5 Adapter</span>
+          <span class="tag tag-green">Bybit Adapter</span>
+          <span class="tag tag-green">Trailing Stop</span>
+          <span class="tag tag-blue">Walk-Forward</span>
+          <span class="tag tag-orange">Bayesian Opt</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="timeline-item">
+      <div class="timeline-dot" style="background:var(--gold)"></div>
+      <div class="timeline-card">
+        <div class="timeline-header">
+          <div class="timeline-phase c-gold">Phase 11-14</div>
+          <div class="timeline-badge tag-gold">Production</div>
+        </div>
+        <div class="timeline-title">API + Monitoring + Security + Dashboard</div>
+        <div style="font-size:12px; color:var(--text2)">FastAPI gateway, Prometheus+Grafana, JWT auth, Next.js dashboard, Kubernetes deploy.</div>
+        <div class="timeline-items">
+          <span class="tag tag-purple">REST API</span>
+          <span class="tag tag-green">Prometheus</span>
+          <span class="tag tag-green">Grafana</span>
+          <span class="tag tag-red">JWT + MFA</span>
+          <span class="tag tag-cyan">Next.js</span>
+          <span class="tag tag-cyan">K8s</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- HETZNER DEPLOY -->
+  <div class="section-title"><h2>Hetzner VPS Deployment</h2></div>
+
+  <div class="flow-container" style="margin-bottom:32px;">
+    <div class="grid-3">
+      <div>
+        <div style="font-size:13px; font-weight:700; color:var(--text2); margin-bottom:12px; text-transform:uppercase; letter-spacing:1px;">Current (CPX22)</div>
+        <div style="display:flex; flex-direction:column; gap:6px; font-size:12px;">
+          <div class="tag tag-gray" style="padding:6px 10px;">🤖 Trading Bot (Python)</div>
+          <div class="tag tag-gray" style="padding:6px 10px;">🗄️ SQLite</div>
+          <div class="tag tag-gray" style="padding:6px 10px;">🌐 FastAPI (webhooks)</div>
+          <div class="tag tag-gray" style="padding:6px 10px;">🐳 Docker</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:center;">
+        <div style="text-align:center;">
+          <div style="font-size:32px;">→</div>
+          <div style="font-size:11px; color:var(--gold); font-weight:600; margin-top:4px;">Upgrade</div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:13px; font-weight:700; color:var(--gold); margin-bottom:12px; text-transform:uppercase; letter-spacing:1px;">Target (CPX31+)</div>
+        <div style="display:flex; flex-direction:column; gap:6px; font-size:12px;">
+          <div class="tag tag-gold" style="padding:6px 10px;">🤖 Trading Bot + All Engines</div>
+          <div class="tag tag-blue" style="padding:6px 10px;">🐘 PostgreSQL + TimescaleDB</div>
+          <div class="tag tag-red" style="padding:6px 10px;">🔴 Redis Cache</div>
+          <div class="tag tag-purple" style="padding:6px 10px;">🌐 FastAPI Gateway</div>
+          <div class="tag tag-green" style="padding:6px 10px;">📊 Prometheus + Grafana</div>
+          <div class="tag tag-orange" style="padding:6px 10px;">🐰 RabbitMQ Events</div>
+          <div class="tag tag-cyan" style="padding:6px 10px;">📦 MinIO Storage</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px; padding-top:20px; border-top:1px solid var(--border); font-size:12px; color:var(--text2);">
+      <strong class="c-gold">Nima uchun Hetzner EU?</strong>
+      Binance HTTP 451 geo-block'ini Railway/US IP'larda beradi. Hetzner Falkenstein (Germany) — to'liq Binance Futures kirish.
+      Volume: alohida 20GB+ PostgreSQL uchun. SSL: Hetzner Load Balancer.
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <div>
+    <span class="live-dot"></span>
+    BLACK LION AI — Enterprise Algorithmic Trading Platform
+  </div>
+  <div style="color:var(--text3)">
+    30 SRS Documents · 20+ Engines · Python 3.12 · Hetzner EU · Version 1.0.0
+  </div>
+  <div>
+    Built for: <strong class="c-gold">Hetzner VPS (178.104.222.103)</strong>
+  </div>
+</div>
+
+</body>
+</html>

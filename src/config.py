@@ -32,8 +32,21 @@ ALLOW_SHORTS = os.getenv("ALLOW_SHORTS", "true").lower() == "true"
 # When BTC 4h is bearish, block crypto LONGS but still allow crypto SHORTS.
 BTC_GATE_BLOCKS_LONGS_ONLY = True
 
-# Gemini — FINAL model makes the signal decision (strongest available);
-# falls back to flash models automatically on quota/503.
+# ─── AI provider ───────────────────────────────────────────────────────────
+# "grok"   = xAI Grok (OpenAI-compatible endpoint, real-time X/news awareness)
+# "gemini" = Google Gemini (legacy fallback)
+AI_PROVIDER = os.getenv("AI_PROVIDER", "grok").lower()
+
+# Grok (xAI) — primary. Uses the OpenAI-compatible /v1 endpoint.
+XAI_API_KEY = os.getenv("XAI_API_KEY", "")
+XAI_BASE_URL = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1")
+# FINAL model makes the decision; falls back to the faster model on error/quota.
+GROK_MODEL_FINAL = os.getenv("GROK_MODEL_FINAL", "grok-4")
+GROK_MODEL = os.getenv("GROK_MODEL", "grok-3-mini")
+GROK_TEMPERATURE = float(os.getenv("GROK_TEMPERATURE", "0.2"))
+
+# Gemini — legacy fallback (kept working if AI_PROVIDER=gemini or Grok is down).
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_MODEL_FINAL = os.getenv("GEMINI_MODEL_FINAL", "gemini-2.5-pro")
 MAX_CLAUDE_CALLS_PER_DAY = int(os.getenv("MAX_CLAUDE_CALLS_PER_DAY", "150"))

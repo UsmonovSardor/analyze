@@ -1,6 +1,7 @@
 ccxt>=4.3
 pandas>=2.2
 requests>=2.31
+openai>=1.40
 google-genai>=1.0
 matplotlib>=3.8
 tradingview-ta>=3.3
